@@ -1,20 +1,36 @@
 import { ScorecardPreview } from './previews/ScorecardPreview'
 import { GrammarPreview } from './previews/GrammarPreview'
 import { RecallsPreview } from './previews/RecallsPreview'
+import { DrugLabelPreview } from './previews/DrugLabelPreview'
+import { FoodRecallPreview } from './previews/FoodRecallPreview'
+import { PrayerTimesPreview } from './previews/PrayerTimesPreview'
+import { RxNormDrugPreview } from './previews/RxNormDrugPreview'
+import { TideWaterLevelPreview } from './previews/TideWaterLevelPreview'
+import { ProteinAnnotationPreview } from './previews/ProteinAnnotationPreview'
+import { PdbStructurePreview } from './previews/PdbStructurePreview'
+import { ChemblMoleculePreview } from './previews/ChemblMoleculePreview'
+import { PubChemCompoundPreview } from './previews/PubChemCompoundPreview'
+import { EnsemblGenePreview } from './previews/EnsemblGenePreview'
+import { AirQualityForecastPreview, AreaForecastPreview, CurrentConditionsPreview, FourDayForecastPreview, RegionalAirQualityPreview, selectWeatherPreviewVariant, StationReadingsPreview, TwentyFourHourForecastPreview, UvIndexPreview, type WeatherPreviewVariant } from './previews/WeatherPreviews'
+import { FdicBankPreview, GleifLeiPreview, MempoolFeePreview, OsrmRoutePreview, RdapDomainPreview } from './previews/OperationalPreviews'
+import { MarketPreview } from './previews/MarketPreviews'
+import { Sparkline } from './previews/ChartPrimitives'
+import { SemanticCards, type SemanticCard } from './previews/SemanticCards'
+import { cleanText, compactNumber, dateParts, epochDate, findPreviewRecords, forecastSymbol, formatNumber, isRecord, numberValue, previewLabel, previewTitleKeys, previewValue, recordArray, recordValue, textArray, textValue, timeLabel } from './previews/previewData'
 import './previews/diagnosticCards.css'
 import { ColorPreview } from './previews/ColorPreview'
 import { DnsPreview } from './previews/DnsPreview'
 import { DownloadsPreview } from './previews/DownloadsPreview'
 import { LifecyclePreview } from './previews/LifecyclePreview'
-import { ExchangeRateApiPreview, CoinbaseRatesPreview } from './previews/ExchangeRatesPreview'
+import { ExchangeRateApiPreview, CoinbaseRatesPreview, VatcomplyRatesPreview } from './previews/ExchangeRatesPreview'
 import './previews/domainCards.css'
 import type { CSSProperties, ReactElement, ReactNode } from 'react'
 import { apiCatalog, type ApiDemo } from './apiCatalog'
 import { getPreviewProfile, type PreviewLayout } from './previewProfiles'
 
 export type { PreviewLayout } from './previewProfiles'
-
-export type WeatherPreviewVariant = 'current' | 'four-day' | 'twenty-four-hour' | 'area-forecast' | 'station-readings' | 'regional-air-quality' | 'air-quality-forecast' | 'uv-index'
+export { selectWeatherPreviewVariant }
+export type { WeatherPreviewVariant }
 
 export type DemoPreviewItem = {
   title: string
@@ -23,66 +39,9 @@ export type DemoPreviewItem = {
 
 type MediaItem = { image: string; title: string; subtitle?: string }
 type LocationPoint = { latitude: number; longitude: number; label: string; detail?: string }
-type MarketSnapshot = { label: string; value: number; currency?: string; points: number[]; dates: string[]; metrics: Array<{ label: string; value: string }> }
 
 export type SsotRuntimeMeta = { httpStatus: number; elapsed: number; size: number }
 const formatResponseBytes = (bytes: number) => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
-
-const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
-const previewTitleKeys = ['name', 'title', 'label', 'commonname', 'country', 'city', 'id', 'code']
-const previewCollectionKeys = ['results', 'items', 'records', 'data', 'features', 'entries', 'result', 'docs']
-
-const previewLabel = (key: string) => key
-  .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-  .replace(/[_-]+/g, ' ')
-  .split(' ')
-  .filter(Boolean)
-  .map((word) => ['id', 'url', 'api', 'iso', 'utc', 'gdp'].includes(word.toLowerCase()) ? word.toUpperCase() : `${word.charAt(0).toUpperCase()}${word.slice(1)}`)
-  .join(' ')
-
-const previewValue = (value: unknown): string => {
-  if (value === null || value === undefined || value === '') return '—'
-  if (typeof value === 'boolean') return value ? 'Yes' : 'No'
-  if (typeof value === 'number') return new Intl.NumberFormat('en', { maximumFractionDigits: 2 }).format(value)
-  if (typeof value === 'string') return value.length > 90 ? `${value.slice(0, 87)}…` : value
-  if (Array.isArray(value)) {
-    const scalars = value.filter((item) => ['string', 'number', 'boolean'].includes(typeof item))
-    return scalars.length === value.length ? scalars.slice(0, 4).map(previewValue).join(', ') : `${value.length} items`
-  }
-  if (isRecord(value)) {
-    for (const key of ['value', 'name', 'title', 'label', 'id', 'code']) {
-      if (key in value && !isRecord(value[key]) && !Array.isArray(value[key])) return previewValue(value[key])
-    }
-    return `${Object.keys(value).length} properties`
-  }
-  return String(value)
-}
-
-const findPreviewRecords = (value: unknown, depth = 0): Array<Record<string, unknown>> => {
-  if (depth > 6) return []
-  if (Array.isArray(value)) {
-    const directRecords = value.filter(isRecord)
-    if (directRecords.length && directRecords.length === value.length) return directRecords
-    for (const item of value) {
-      const nested = findPreviewRecords(item, depth + 1)
-      if (nested.length) return nested
-    }
-    return directRecords
-  }
-  if (!isRecord(value)) return []
-  for (const key of previewCollectionKeys) {
-    if (key in value) {
-      const nested = findPreviewRecords(value[key], depth + 1)
-      if (nested.length) return nested
-    }
-  }
-  for (const item of Object.values(value)) {
-    if (!Array.isArray(item) && !isRecord(item)) continue
-    const nested = findPreviewRecords(item, depth + 1)
-    if (nested.length) return nested
-  }
-  return depth === 0 ? [value] : []
-}
 
 export const buildDemoPreview = (data: unknown): DemoPreviewItem[] => {
   const records = findPreviewRecords(data)
@@ -105,292 +64,8 @@ export const buildDemoPreview = (data: unknown): DemoPreviewItem[] => {
   })
 }
 
-const stationWeatherIds = ['data-gov-air-temperature', 'data-gov-rainfall', 'data-gov-relative-humidity', 'data-gov-wind-direction', 'data-gov-wind-speed']
-
 export function selectPreviewLayout(api: Pick<ApiDemo, 'id' | 'category'>): PreviewLayout {
   return getPreviewProfile(api.id)?.layout ?? 'result-list'
-}
-
-export function selectWeatherPreviewVariant(api: Pick<ApiDemo, 'id'>): WeatherPreviewVariant {
-  if (api.id === 'open-meteo-air-quality') return 'air-quality-forecast'
-  if (api.id === 'data-gov-4day-forecast') return 'four-day'
-  if (api.id === 'data-gov-24hr-forecast') return 'twenty-four-hour'
-  if (api.id === 'data-gov-forecast-2hr') return 'area-forecast'
-  if (stationWeatherIds.includes(api.id)) return 'station-readings'
-  if (['data-gov-pm25', 'data-gov-psi'].includes(api.id)) return 'regional-air-quality'
-  if (api.id === 'data-gov-uv-index') return 'uv-index'
-  return 'current'
-}
-
-const scalar = (value: unknown) => ['string', 'number', 'boolean'].includes(typeof value) ? value : undefined
-const numberValue = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? value : typeof value === 'string' && value.trim() && Number.isFinite(Number(value)) ? Number(value) : undefined
-const textValue = (value: unknown) => scalar(value) === undefined ? undefined : String(value)
-const recordValue = (value: unknown, key: string) => isRecord(value) ? value[key] : undefined
-
-const findByKey = (value: unknown, keys: string[], depth = 0): unknown => {
-  if (depth > 7 || value === null || value === undefined) return undefined
-  if (isRecord(value)) {
-    const entry = Object.entries(value).find(([key, item]) => keys.some((candidate) => key.toLowerCase() === candidate.toLowerCase()) && scalar(item) !== undefined)
-    if (entry) return entry[1]
-    for (const item of Object.values(value)) {
-      const found = findByKey(item, keys, depth + 1)
-      if (found !== undefined) return found
-    }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findByKey(item, keys, depth + 1)
-      if (found !== undefined) return found
-    }
-  }
-  return undefined
-}
-
-const formatNumber = (value: number, digits = 1) => new Intl.NumberFormat('en', { maximumFractionDigits: digits }).format(value)
-const compactNumber = (value: number) => new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 1 }).format(value)
-const decodeHtml = (value: string) => value.replace(/&(#x[\da-f]+|#\d+|quot|apos|amp|lt|gt);/gi, (entity, code: string) => {
-  const named: Record<string, string> = { quot: '"', apos: "'", amp: '&', lt: '<', gt: '>' }
-  if (code[0] !== '#') return named[code.toLowerCase()] ?? entity
-  const numeric = Number.parseInt(code[1].toLowerCase() === 'x' ? code.slice(2) : code.slice(1), code[1].toLowerCase() === 'x' ? 16 : 10)
-  return Number.isFinite(numeric) ? String.fromCodePoint(numeric) : entity
-})
-const cleanText = (value: unknown) => {
-  const text = textValue(value)
-  return text ? decodeHtml(text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()) : undefined
-}
-
-const weatherCondition = (code: number | undefined) => {
-  if (code === undefined) return { label: 'Live conditions', icon: '◌' }
-  if (code === 0) return { label: 'Clear sky', icon: '☀' }
-  if (code <= 3) return { label: 'Partly cloudy', icon: '☁' }
-  if ([45, 48].includes(code)) return { label: 'Foggy', icon: '≋' }
-  if (code <= 67 || [80, 81, 82].includes(code)) return { label: 'Rain showers', icon: '☂' }
-  if (code >= 95) return { label: 'Thunderstorms', icon: 'ϟ' }
-  return { label: 'Mixed conditions', icon: '◒' }
-}
-
-const forecastSymbol = (forecast: string | undefined) => {
-  const value = forecast?.toLowerCase() ?? ''
-  if (value.includes('thunder')) return 'ϟ'
-  if (value.includes('shower') || value.includes('rain')) return '☂'
-  if (value.includes('cloud')) return '☁'
-  if (value.includes('fair') || value.includes('sun') || value.includes('clear')) return '☀'
-  if (value.includes('haze') || value.includes('mist')) return '≋'
-  return '◒'
-}
-
-const firstResponseItem = (data: unknown) => {
-  if (!isRecord(data) || !Array.isArray(data.items) || !isRecord(data.items[0])) return undefined
-  return data.items[0]
-}
-
-const dateParts = (value: unknown) => {
-  const text = textValue(value)
-  if (!text) return { day: '—', weekday: 'Forecast', full: '' }
-  const date = new Date(text)
-  if (Number.isNaN(date.getTime())) return { day: text.slice(-2), weekday: 'Forecast', full: text }
-  return {
-    day: date.toLocaleDateString('en-SG', { day: '2-digit' }),
-    weekday: date.toLocaleDateString('en-SG', { weekday: 'short' }),
-    full: date.toLocaleDateString('en-SG', { day: 'numeric', month: 'short' }),
-  }
-}
-
-const timeLabel = (value: unknown) => {
-  const text = textValue(value)
-  if (!text) return '—'
-  const date = new Date(text)
-  return Number.isNaN(date.getTime()) ? text : date.toLocaleTimeString('en-SG', { hour: 'numeric', minute: '2-digit' })
-}
-
-const rangeValues = (value: unknown) => {
-  const range = isRecord(value) ? value : {}
-  return { low: numberValue(range.low), high: numberValue(range.high) }
-}
-
-const measurementMeta = (api: ApiDemo) => {
-  if (api.id === 'data-gov-air-temperature') return { label: 'Air temperature', unit: '°C' }
-  if (api.id === 'data-gov-pm25') return { label: 'PM2.5 reading', unit: ' µg/m³' }
-  if (api.id === 'data-gov-psi') return { label: 'Air quality index', unit: ' PSI' }
-  if (api.id === 'data-gov-rainfall') return { label: 'Rainfall', unit: ' mm' }
-  if (api.id === 'data-gov-relative-humidity') return { label: 'Relative humidity', unit: '%' }
-  if (api.id === 'data-gov-uv-index') return { label: 'UV index', unit: '' }
-  if (api.id === 'data-gov-wind-direction') return { label: 'Wind direction', unit: '°' }
-  if (api.id === 'data-gov-wind-speed') return { label: 'Wind speed', unit: ' km/h' }
-  return { label: 'Current conditions', unit: undefined }
-}
-
-function CurrentConditionsPreview({ data, api }: { data: unknown; api: ApiDemo }) {
-  const root = isRecord(data) ? data : {}
-  const current = isRecord(root.current) ? root.current : findPreviewRecords(data)[0] ?? {}
-  const units = isRecord(root.current_units) ? root.current_units : {}
-  const temperature = numberValue(current.temperature_2m ?? findByKey(data, ['temperature_2m', 'temperature', 'value']))
-  const humidity = numberValue(current.relative_humidity_2m ?? findByKey(data, ['relative_humidity_2m', 'humidity']))
-  const wind = numberValue(current.wind_speed_10m ?? findByKey(data, ['wind_speed_10m', 'wind_speed']))
-  const code = numberValue(current.weather_code ?? findByKey(data, ['weather_code']))
-  const condition = weatherCondition(code)
-  const timezone = textValue(root.timezone) ?? textValue(findByKey(data, ['area', 'location'])) ?? 'Live station'
-  const location = timezone.split('/').at(-1)?.replace(/_/g, ' ') ?? timezone
-  const time = textValue(current.time ?? findByKey(data, ['timestamp', 'date']))
-  const temperatureUnit = textValue(units.temperature_2m) ?? '°C'
-  const measurement = measurementMeta(api)
-  const primaryUnit = measurement.unit ?? temperatureUnit
-  const metrics = [
-    { label: 'Humidity', value: humidity === undefined ? 'Live reading' : `${formatNumber(humidity)}%`, icon: '◉' },
-    { label: 'Wind speed', value: wind === undefined ? 'Live reading' : `${formatNumber(wind)} ${textValue(units.wind_speed_10m) ?? 'km/h'}`, icon: '≈' },
-    { label: 'Coordinates', value: root.latitude !== undefined && root.longitude !== undefined ? `${formatNumber(Number(root.latitude), 3)}, ${formatNumber(Number(root.longitude), 3)}` : 'Station supplied', icon: '⌖' },
-  ]
-  return <div className="weather-preview">
-    <div className="weather-hero">
-      <div><span className="weather-location">⌖ {location}</span><strong>{temperature === undefined ? 'Live' : `${formatNumber(temperature)}${primaryUnit}`}</strong><b>{code === undefined ? measurement.label : condition.label}</b><small>{time ? `Updated ${time.replace('T', ' ')}` : 'Current observation'}</small></div>
-      <span className="weather-symbol" aria-hidden="true">{condition.icon}</span>
-    </div>
-    <div className="weather-metrics">{metrics.map((metric) => <article key={metric.label}><span aria-hidden="true">{metric.icon}</span><div><small>{metric.label}</small><strong>{metric.value}</strong></div></article>)}</div>
-  </div>
-}
-
-function FourDayForecastPreview({ data }: { data: unknown }) {
-  const item = firstResponseItem(data)
-  const forecasts = item && Array.isArray(item.forecasts) ? item.forecasts.filter(isRecord).slice(0, 4) : []
-  if (!item || !forecasts.length) return <div className="weather-empty"><strong>Forecast unavailable</strong><span>The response did not include daily forecast records.</span></div>
-  const lead = forecasts[0]
-  const leadTemperature = rangeValues(lead.temperature)
-  const leadHumidity = rangeValues(lead.relative_humidity)
-  const leadWind = isRecord(lead.wind) ? lead.wind : {}
-  const leadWindSpeed = rangeValues(leadWind.speed)
-  const leadForecast = cleanText(lead.forecast) ?? 'Forecast available'
-  return <div className="weather-preview weather-forecast-preview" data-weather-view="four-day-outlook">
-    <div className="forecast-lead">
-      <div><span className="weather-location">⌖ Singapore · {dateParts(lead.date ?? lead.timestamp).full}</span><strong>{leadTemperature.high === undefined ? '—' : `${formatNumber(leadTemperature.high)}°`}<small>{leadTemperature.low === undefined ? '' : ` / ${formatNumber(leadTemperature.low)}°`}</small></strong><b>{leadForecast}</b><small>Updated {timeLabel(item.update_timestamp ?? item.timestamp)}</small></div>
-      <span className="weather-symbol" aria-hidden="true">{forecastSymbol(leadForecast)}</span>
-    </div>
-    <div className="forecast-summary" aria-label="First forecast day details">
-      <span><small>Humidity</small><strong>{leadHumidity.low ?? '—'}–{leadHumidity.high ?? '—'}%</strong></span>
-      <span><small>Wind</small><strong>{leadWindSpeed.low ?? '—'}–{leadWindSpeed.high ?? '—'} km/h</strong></span>
-      <span><small>Direction</small><strong>{previewValue(leadWind.direction)}</strong></span>
-    </div>
-    <div className="forecast-days">{forecasts.map((forecast, index) => {
-      const date = dateParts(forecast.date ?? forecast.timestamp)
-      const temperature = rangeValues(forecast.temperature)
-      const humidity = rangeValues(forecast.relative_humidity)
-      const description = cleanText(forecast.forecast) ?? 'Forecast'
-      return <article className={index === 0 ? 'active' : ''} key={`${date.full}-${index}`}><div><span>{date.weekday}</span><small>{date.full}</small></div><b aria-hidden="true">{forecastSymbol(description)}</b><strong>{temperature.high ?? '—'}° <small>{temperature.low ?? '—'}°</small></strong><p>{description}</p><em>Humidity {humidity.low ?? '—'}–{humidity.high ?? '—'}%</em></article>
-    })}</div>
-  </div>
-}
-
-function TwentyFourHourForecastPreview({ data }: { data: unknown }) {
-  const item = firstResponseItem(data)
-  const general = item && isRecord(item.general) ? item.general : undefined
-  const periods = item && Array.isArray(item.periods) ? item.periods.filter(isRecord).slice(0, 3) : []
-  if (!item || !general) return <div className="weather-empty"><strong>Forecast unavailable</strong><span>The response did not include a general forecast.</span></div>
-  const temperature = rangeValues(general.temperature)
-  const humidity = rangeValues(general.relative_humidity)
-  const wind = isRecord(general.wind) ? general.wind : {}
-  const windSpeed = rangeValues(wind.speed)
-  const description = cleanText(general.forecast) ?? '24-hour forecast'
-  return <div className="weather-preview weather-forecast-preview" data-weather-view="twenty-four-hour">
-    <div className="forecast-lead compact"><div><span className="weather-location">⌖ Singapore · next 24 hours</span><strong>{temperature.high ?? '—'}°<small> / {temperature.low ?? '—'}°</small></strong><b>{description}</b><small>Valid {timeLabel(recordValue(item.valid_period, 'start'))}–{timeLabel(recordValue(item.valid_period, 'end'))}</small></div><span className="weather-symbol" aria-hidden="true">{forecastSymbol(description)}</span></div>
-    <div className="forecast-summary"><span><small>Humidity</small><strong>{humidity.low ?? '—'}–{humidity.high ?? '—'}%</strong></span><span><small>Wind</small><strong>{windSpeed.low ?? '—'}–{windSpeed.high ?? '—'} km/h</strong></span><span><small>Direction</small><strong>{previewValue(wind.direction)}</strong></span></div>
-    <div className="forecast-periods">{periods.map((period, index) => {
-      const regions = isRecord(period.regions) ? period.regions : {}
-      return <article key={`${timeLabel(recordValue(period.time, 'start'))}-${index}`}><div><strong>{timeLabel(recordValue(period.time, 'start'))}–{timeLabel(recordValue(period.time, 'end'))}</strong><small>Regional outlook</small></div><ul>{Object.entries(regions).map(([region, forecast]) => <li key={region}><span>{previewLabel(region)}</span><b>{previewValue(forecast)}</b></li>)}</ul></article>
-    })}</div>
-  </div>
-}
-
-function AreaForecastPreview({ data }: { data: unknown }) {
-  const item = firstResponseItem(data)
-  const forecasts = item && Array.isArray(item.forecasts) ? item.forecasts.filter(isRecord) : []
-  if (!item || !forecasts.length) return <div className="weather-empty"><strong>Area forecast unavailable</strong><span>No neighbourhood forecasts were returned.</span></div>
-  const counts = new Map<string, number>()
-  forecasts.forEach((forecast) => {
-    const description = cleanText(forecast.forecast) ?? 'Unknown'
-    counts.set(description, (counts.get(description) ?? 0) + 1)
-  })
-  const dominant = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]
-  return <div className="weather-preview area-forecast-preview" data-weather-view="area-forecast">
-    <div className="area-forecast-summary"><div><span>Singapore neighbourhoods</span><strong>{forecasts.length}</strong><b>areas reporting</b><small>Valid {timeLabel(recordValue(item.valid_period, 'start'))}–{timeLabel(recordValue(item.valid_period, 'end'))}</small></div><div><span aria-hidden="true">{forecastSymbol(dominant?.[0])}</span><strong>{dominant?.[0] ?? 'Current outlook'}</strong><small>{dominant?.[1] ?? 0} areas</small></div></div>
-    <div className="area-forecast-grid">{forecasts.slice(0, 12).map((forecast, index) => <article key={`${forecast.area}-${index}`}><span aria-hidden="true">{forecastSymbol(cleanText(forecast.forecast))}</span><div><strong>{previewValue(forecast.area)}</strong><small>{previewValue(forecast.forecast)}</small></div></article>)}</div>
-  </div>
-}
-
-function StationReadingsPreview({ data, api }: { data: unknown; api: ApiDemo }) {
-  const root = isRecord(data) ? data : {}
-  const metadata = isRecord(root.metadata) ? root.metadata : {}
-  const item = firstResponseItem(data)
-  const readings = item && Array.isArray(item.readings) ? item.readings.filter(isRecord) : []
-  const stations = Array.isArray(metadata.stations) ? metadata.stations.filter(isRecord) : []
-  const stationById = new Map(stations.map((station) => [textValue(station.id) ?? '', station]))
-  const values = readings.map((reading) => numberValue(reading.value)).filter((value): value is number => value !== undefined)
-  if (!readings.length || !values.length) return <div className="weather-empty"><strong>Station readings unavailable</strong><span>No measurement values were returned.</span></div>
-  const measurement = measurementMeta(api)
-  const metadataUnit = textValue(metadata.reading_unit)?.replace('deg C', '°C')
-  const unit = metadataUnit ?? measurement.unit?.trim() ?? ''
-  const average = values.reduce((sum, value) => sum + value, 0) / values.length
-  return <div className="weather-preview station-readings-preview" data-weather-view="station-readings">
-    <div className="station-summary"><div><span>{measurement.label}</span><strong>{formatNumber(average)}{unit}</strong><b>Network average</b><small>{values.length} active station{values.length === 1 ? '' : 's'} · {timeLabel(item?.timestamp)}</small></div><dl><div><dt>Lowest</dt><dd>{formatNumber(Math.min(...values))}{unit}</dd></div><div><dt>Highest</dt><dd>{formatNumber(Math.max(...values))}{unit}</dd></div><div><dt>Updated</dt><dd>{timeLabel(item?.timestamp)}</dd></div></dl></div>
-    <div className="station-list">{readings.slice(0, 8).map((reading, index) => {
-      const station = stationById.get(textValue(reading.station_id) ?? '')
-      return <article key={`${reading.station_id}-${index}`}><span>{textValue(reading.station_id) ?? index + 1}</span><div><strong>{textValue(station?.name) ?? 'Weather station'}</strong><small>{station && isRecord(station.location) ? `${previewValue(station.location.latitude)}, ${previewValue(station.location.longitude)}` : 'Singapore sensor network'}</small></div><b>{previewValue(reading.value)}{unit}</b></article>
-    })}</div>
-  </div>
-}
-
-function RegionalAirQualityPreview({ data, api }: { data: unknown; api: ApiDemo }) {
-  const item = firstResponseItem(data)
-  const readings = item && isRecord(item.readings) ? item.readings : {}
-  const preferredKey = api.id === 'data-gov-psi' ? 'psi_twenty_four_hourly' : 'pm25_one_hourly'
-  let regional = isRecord(readings[preferredKey]) ? readings[preferredKey] : undefined
-  if (!regional) regional = Object.values(readings).find((value) => isRecord(value) && Object.values(value).some((reading) => numberValue(reading) !== undefined)) as Record<string, unknown> | undefined
-  const regions = regional ? Object.entries(regional).map(([name, value]) => ({ name, value: numberValue(value) })).filter((entry): entry is { name: string; value: number } => entry.value !== undefined) : []
-  if (!regions.length) return <div className="weather-empty"><strong>Regional readings unavailable</strong><span>No regional air-quality values were returned.</span></div>
-  const max = Math.max(...regions.map((region) => region.value))
-  const average = regions.reduce((sum, region) => sum + region.value, 0) / regions.length
-  const unit = api.id === 'data-gov-psi' ? 'PSI' : 'µg/m³'
-  const status = api.id === 'data-gov-psi' ? max <= 50 ? 'Good' : max <= 100 ? 'Moderate' : 'Elevated' : max <= 12 ? 'Low' : max <= 35 ? 'Moderate' : 'Elevated'
-  return <div className="weather-preview regional-air-preview" data-weather-view="regional-air-quality">
-    <div className="air-quality-summary"><div><span>Singapore air quality</span><strong>{formatNumber(average)}</strong><b>{unit} regional average</b><small>Updated {timeLabel(item?.update_timestamp ?? item?.timestamp)}</small></div><em className={status.toLowerCase()}>{status}</em></div>
-    <div className="regional-reading-grid">{regions.map((region) => <article key={region.name}><span>{previewLabel(region.name)}</span><strong>{formatNumber(region.value)}</strong><small>{unit}</small><i style={{ '--reading-level': `${Math.min(100, (region.value / Math.max(max, 1)) * 100)}%` } as CSSProperties}/></article>)}</div>
-  </div>
-}
-
-function AirQualityForecastPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const current = isRecord(root.current) ? root.current : {}
-  const units = isRecord(root.current_units) ? root.current_units : {}
-  const aqi = numberValue(current.us_aqi)
-  if (aqi === undefined) return <div className="weather-empty"><strong>Air-quality reading unavailable</strong><span>The response did not include a current U.S. AQI value.</span></div>
-  const status = aqi <= 50 ? 'Good' : aqi <= 100 ? 'Moderate' : aqi <= 150 ? 'Sensitive groups' : aqi <= 200 ? 'Unhealthy' : aqi <= 300 ? 'Very unhealthy' : 'Hazardous'
-  const metrics = [
-    { label: 'PM2.5', key: 'pm2_5' }, { label: 'PM10', key: 'pm10' }, { label: 'Nitrogen dioxide', key: 'nitrogen_dioxide' }, { label: 'Ozone', key: 'ozone' },
-  ]
-  return <div className="weather-preview global-air-preview" data-weather-view="air-quality-forecast">
-    <div className="global-air-hero"><div><span>⌖ {textValue(root.timezone)?.replace('_', ' ') ?? 'Selected coordinates'}</span><strong>{formatNumber(aqi)}</strong><b>U.S. AQI · {status}</b><small>Updated {textValue(current.time)?.replace('T', ' ') ?? 'now'}</small></div><div className="air-orbit" aria-hidden="true"><i/><i/><i/></div></div>
-    <div className="global-air-metrics">{metrics.map((metric) => <article key={metric.key}><small>{metric.label}</small><strong>{numberValue(current[metric.key]) === undefined ? '—' : formatNumber(numberValue(current[metric.key]) as number)}</strong><span>{textValue(units[metric.key]) ?? 'µg/m³'}</span></article>)}</div>
-  </div>
-}
-
-function UvIndexPreview({ data }: { data: unknown }) {
-  const item = firstResponseItem(data)
-  const indexes = item && Array.isArray(item.index) ? item.index.filter(isRecord) : []
-  const latest = indexes[0]
-  const value = numberValue(latest?.value)
-  if (value === undefined) return <div className="weather-empty"><strong>UV reading unavailable</strong><span>No UV index values were returned.</span></div>
-  const status = value < 3 ? 'Low' : value < 6 ? 'Moderate' : value < 8 ? 'High' : value < 11 ? 'Very high' : 'Extreme'
-  return <div className="weather-preview uv-preview" data-weather-view="uv-index"><div className="uv-summary"><div><span>Current UV index</span><strong>{formatNumber(value)}</strong><b>{status}</b><small>Updated {timeLabel(item?.update_timestamp ?? latest.timestamp)}</small></div><div className="uv-gauge" style={{ '--uv-position': `${Math.min(100, (value / 12) * 100)}%` } as CSSProperties}><i/><span>Low</span><span>Extreme</span></div></div>{indexes.length > 1 && <div className="uv-timeline">{indexes.slice(0, 8).map((entry, index) => <article key={`${entry.timestamp}-${index}`}><span>{timeLabel(entry.timestamp)}</span><strong>{previewValue(entry.value)}</strong></article>)}</div>}</div>
-}
-
-function WeatherPreview({ data, api }: { data: unknown; api: ApiDemo }) {
-  const variant = selectWeatherPreviewVariant(api)
-  if (variant === 'four-day') return <FourDayForecastPreview data={data}/>
-  if (variant === 'twenty-four-hour') return <TwentyFourHourForecastPreview data={data}/>
-  if (variant === 'area-forecast') return <AreaForecastPreview data={data}/>
-  if (variant === 'station-readings') return <StationReadingsPreview data={data} api={api}/>
-  if (variant === 'regional-air-quality') return <RegionalAirQualityPreview data={data} api={api}/>
-  if (variant === 'air-quality-forecast') return <AirQualityForecastPreview data={data}/>
-  if (variant === 'uv-index') return <UvIndexPreview data={data}/>
-  return <CurrentConditionsPreview data={data} api={api}/>
 }
 
 function CountryPreview({ data, api }: { data: unknown; api: ApiDemo }) {
@@ -407,256 +82,6 @@ function CountryPreview({ data, api }: { data: unknown; api: ApiDemo }) {
   return <div className="country-preview">
     <div className="country-hero"><span className="country-code">{code}</span><div><small>World profile</small><h3>{name}</h3><p><span>●</span> {region}</p></div><span className="country-globe" aria-hidden="true">◎</span></div>
     <dl className="country-facts">{facts.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
-  </div>
-}
-
-function marketSnapshot(api: ApiDemo, data: unknown): MarketSnapshot {
-  if (api.id === 'bls-timeseries' && isRecord(data)) {
-    const series = recordArray(recordValue(data.Results, 'series'))[0]
-    const points = recordArray(series?.data).map((entry) => numberValue(entry.value)).filter((value): value is number => value !== undefined).reverse()
-    const dates = recordArray(series?.data).map((entry) => `${textValue(entry.periodName) ?? ''} ${textValue(entry.year) ?? ''}`.trim()).reverse()
-    const latest = points.at(-1) ?? 0
-    return {
-      label: `${textValue(series?.seriesID) ?? 'BLS series'} · U.S. labor statistics`, value: latest, points, dates,
-      metrics: [
-        { label: 'Latest period', value: dates.at(-1) || '—' },
-        { label: 'Period high', value: points.length ? formatNumber(Math.max(...points), 2) : '—' },
-        { label: 'Period low', value: points.length ? formatNumber(Math.min(...points), 2) : '—' },
-      ],
-    }
-  }
-  if (api.id === 'coingecko-keyless-market' && isRecord(data)) {
-    const [coinId, quote] = Object.entries(data).find(([, value]) => isRecord(value)) ?? ['Cryptocurrency', {}]
-    const market = isRecord(quote) ? quote : {}
-    const currencyKey = Object.keys(market).find((key) => !key.includes('_')) ?? 'usd'
-    const price = numberValue(market[currencyKey]) ?? 0
-    const change = numberValue(market[`${currencyKey}_24h_change`]) ?? 0
-    const previous = change === -100 ? price : price / (1 + (change / 100))
-    return {
-      label: `${previewLabel(coinId)} · Keyless public market`, value: price, currency: currencyKey.toUpperCase(),
-      points: [previous, price], dates: ['24 hours ago', 'Latest'],
-      metrics: [
-        { label: '24h change', value: `${change >= 0 ? '+' : ''}${formatNumber(change, 2)}%` },
-        { label: 'Market cap', value: compactNumber(numberValue(market[`${currencyKey}_market_cap`]) ?? 0) },
-        { label: '24h volume', value: compactNumber(numberValue(market[`${currencyKey}_24h_vol`]) ?? 0) },
-      ],
-    }
-  }
-  if (api.id === 'open-meteo-history' && isRecord(data)) {
-    const daily = isRecord(data.daily) ? data.daily : {}
-    const units = isRecord(data.daily_units) ? data.daily_units : {}
-    const highs = Array.isArray(daily.temperature_2m_max) ? daily.temperature_2m_max.map(numberValue).filter((value): value is number => value !== undefined) : []
-    const lows = Array.isArray(daily.temperature_2m_min) ? daily.temperature_2m_min.map(numberValue).filter((value): value is number => value !== undefined) : []
-    const rain = Array.isArray(daily.precipitation_sum) ? daily.precipitation_sum.map(numberValue).filter((value): value is number => value !== undefined) : []
-    const dates = Array.isArray(daily.time) ? daily.time.map((value) => textValue(value) ?? '') : []
-    const latest = highs.at(-1) ?? 0
-    return {
-      label: `${textValue(data.timezone)?.replace(/_/g, ' ') ?? 'Historical climate'} · Daily high (${textValue(units.temperature_2m_max) ?? '°C'})`, value: latest,
-      points: highs, dates,
-      metrics: [
-        { label: 'Average high', value: highs.length ? `${formatNumber(highs.reduce((sum, value) => sum + value, 0) / highs.length)}°` : '—' },
-        { label: 'Average low', value: lows.length ? `${formatNumber(lows.reduce((sum, value) => sum + value, 0) / lows.length)}°` : '—' },
-        { label: 'Total rain', value: `${formatNumber(rain.reduce((sum, value) => sum + value, 0))} ${textValue(units.precipitation_sum) ?? 'mm'}` },
-      ],
-    }
-  }
-  if (api.id === 'bank-of-canada-valet' && isRecord(data)) {
-    const observations = recordArray(recordValue(data, 'observations'))
-    const observedValueKeys = new Set<string>()
-    observations.forEach((observation) => {
-      Object.entries(observation).forEach(([key, value]) => {
-        if (key === 'd' || key === 'date') return
-        if (numberValue(value) !== undefined) observedValueKeys.add(key)
-      })
-    })
-    const observedKey = [...observedValueKeys][0]
-    const seriesRows = observations
-      .map((observation) => ({ date: textValue(observation.d) ?? textValue(observation.date) ?? '', value: observedKey ? numberValue(observation[observedKey]) : undefined }))
-      .filter((entry): entry is { date: string; value: number } => entry.value !== undefined)
-    const points = seriesRows.map((entry) => entry.value)
-    const dates = seriesRows.map((entry) => entry.date)
-    const unit = observedKey ?? 'value'
-    if (!points.length) return {
-      label: 'Bank of Canada series',
-      value: 0,
-      points: [0],
-      dates: ['No series'],
-      metrics: [{ label: 'Data points', value: '0' }, { label: 'Series', value: observedKey ?? '—' }],
-    }
-    return {
-      label: `${cleanText(recordValue(data, 'name')) ?? cleanText(recordValue(data, 'title')) ?? textValue(recordValue(data, 'series')) ?? api.name} · Bank of Canada`,
-      value: points.at(-1) ?? 0, currency: unit, points: points, dates,
-      metrics: [
-        { label: 'Latest value', value: `${formatNumber(points.at(-1) ?? 0)} ${unit}` },
-        { label: 'Series high', value: formatNumber(Math.max(...points), 4) },
-        { label: 'Series low', value: formatNumber(Math.min(...points), 4) },
-      ],
-    }
-  }
-  if (api.id === 'kraken-public-ticker' && isRecord(data)) {
-    const result = isRecord(data.result) ? data.result : {}
-    const ticker = Object.values(result).find(isRecord) ?? {}
-    const last = numberValue(Array.isArray(ticker.c) ? ticker.c[0] : undefined) ?? 0
-    const open = numberValue(ticker.o) ?? last
-    const low = numberValue(Array.isArray(ticker.l) ? ticker.l[1] ?? ticker.l[0] : undefined)
-    const high = numberValue(Array.isArray(ticker.h) ? ticker.h[1] ?? ticker.h[0] : undefined)
-    const volume = numberValue(Array.isArray(ticker.v) ? ticker.v[1] ?? ticker.v[0] : undefined)
-    const bid = numberValue(Array.isArray(ticker.b) ? ticker.b[0] : undefined)
-    const ask = numberValue(Array.isArray(ticker.a) ? ticker.a[0] : undefined)
-    return {
-      label: Object.keys(result)[0] ?? 'Kraken spot market', value: last, currency: 'USD', points: [open, low, high, last].filter((value): value is number => value !== undefined), dates: ['Open', 'Low', 'High', 'Last'],
-      metrics: [
-        { label: 'Bid / ask', value: `${bid === undefined ? '—' : formatNumber(bid, 2)} / ${ask === undefined ? '—' : formatNumber(ask, 2)}` },
-        { label: '24h high / low', value: `${high === undefined ? '—' : formatNumber(high, 2)} / ${low === undefined ? '—' : formatNumber(low, 2)}` },
-        { label: '24h volume', value: volume === undefined ? '—' : compactNumber(volume) },
-      ],
-    }
-  }
-  if (api.id === 'wikimedia-pageviews' && isRecord(data)) {
-    const items = recordArray(data.items)
-    const points = items.map((item) => numberValue(item.views)).filter((value): value is number => value !== undefined)
-    const dates = items.map((item) => {
-      const stamp = textValue(item.timestamp) ?? ''
-      return stamp.length >= 8 ? `${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)}` : stamp
-    })
-    const latest = points.at(-1) ?? 0
-    const total = points.reduce((sum, value) => sum + value, 0)
-    return {
-      label: `${textValue(items[0]?.article)?.replace(/_/g, ' ') ?? api.name} · Daily readers`, value: latest, points, dates,
-      metrics: [
-        { label: 'Total views', value: compactNumber(total) },
-        { label: 'Daily average', value: points.length ? compactNumber(total / points.length) : '—' },
-        { label: 'Peak day', value: points.length ? compactNumber(Math.max(...points)) : '—' },
-      ],
-    }
-  }
-  if (api.id === 'nasa-power-climate' && isRecord(data)) {
-    const properties = isRecord(data.properties) ? data.properties : {}
-    const parameterSources = isRecord(properties.parameters) ? properties.parameters : isRecord(data.parameters) ? data.parameters : {}
-    const preferredKeys = ['T2M', 'T2M_MAX', 'T2M_MIN', 'RH2M', 'WS2M', 'PRECTOT']
-    const selectedKey = preferredKeys.find((key) => isRecord(parameterSources[key])) ?? Object.keys(parameterSources)[0]
-    const selected = selectedKey ? (isRecord(parameterSources[selectedKey]) ? parameterSources[selectedKey] : {}) : {}
-    const selectedData = isRecord(selected.data) ? selected.data : isRecord(selected.values) ? selected.values : selected
-    const rawSeries = isRecord(selectedData) ? Object.entries(selectedData) : []
-    const series = rawSeries
-      .map(([date, value]) => ({ date, value: numberValue(value) }))
-      .filter((entry): entry is { date: string; value: number } => entry.value !== undefined)
-      .slice(-180)
-    const points = series.map((entry) => entry.value)
-    const dates = series.map((entry) => entry.date)
-    const latest = points.at(-1) ?? 0
-    const unit = cleanText(selected.unit) || cleanText(selected.units) || 'units'
-    return {
-      label: `NASA POWER · ${selectedKey ?? 'climate'} · ${cleanText(selected.label) ?? 'Climate metric'}`,
-      value: latest,
-      currency: unit,
-      points,
-      dates,
-      metrics: [
-        { label: 'Latest value', value: `${formatNumber(latest)} ${unit}` },
-        { label: 'Series length', value: String(series.length) },
-        { label: 'Range', value: points.length ? `${formatNumber(Math.min(...points), 4)} – ${formatNumber(Math.max(...points), 4)}` : '—' },
-      ],
-    }
-  }
-  if (api.id === 'yahoo-finance-sgx-history' && isRecord(data)) {
-    const chart = isRecord(data.chart) ? data.chart : {}
-    const result = Array.isArray(chart.result) && isRecord(chart.result[0]) ? chart.result[0] : {}
-    const meta = isRecord(result.meta) ? result.meta : {}
-    const quote = isRecord(result.indicators) && Array.isArray(result.indicators.quote) && isRecord(result.indicators.quote[0]) ? result.indicators.quote[0] : {}
-    const closes = Array.isArray(quote.close) ? quote.close.map(numberValue).filter((item): item is number => item !== undefined) : []
-    const timestamps = Array.isArray(result.timestamp) ? result.timestamp.map((item) => typeof item === 'number' ? new Date(item * 1000).toISOString().slice(0, 10) : String(item)) : []
-    const latest = closes.at(-1) ?? numberValue(meta.regularMarketPrice) ?? 0
-    return { label: textValue(meta.symbol) ?? api.name, value: latest, currency: textValue(meta.currency), points: closes, dates: timestamps, metrics: [['Day high', quote.high], ['Day low', quote.low], ['Volume', quote.volume]].map(([label, values]) => ({ label: String(label), value: Array.isArray(values) ? previewValue(values.at(-1)) : previewValue(values) })) }
-  }
-  if (api.id === 'coinpaprika-ticker' && isRecord(data)) {
-    const usd = isRecord(data.quotes) && isRecord(data.quotes.USD) ? data.quotes.USD : {}
-    const price = numberValue(usd.price) ?? 0
-    return { label: `${textValue(data.name) ?? api.name} · ${textValue(data.symbol) ?? ''}`, value: price, currency: 'USD', points: [price], dates: [textValue(data.last_updated) ?? 'Latest'], metrics: [['24h change', usd.percent_change_24h], ['Market cap', usd.market_cap], ['24h volume', usd.volume_24h]].map(([label, value]) => ({ label: String(label), value: numberValue(value) === undefined ? '—' : label === '24h change' ? `${formatNumber(Number(value), 2)}%` : compactNumber(Number(value)) })) }
-  }
-  if (api.id === 'open-meteo-ensemble' && isRecord(data)) {
-    const hourly = isRecord(data.hourly) ? data.hourly : {}
-    const units = isRecord(data.hourly_units) ? data.hourly_units : {}
-    const baseKey = Object.keys(hourly).find((key) => key !== 'time' && !key.includes('_member'))
-    const points = baseKey && Array.isArray(hourly[baseKey]) ? hourly[baseKey].map(numberValue).filter((value): value is number => value !== undefined) : []
-    const dates = Array.isArray(hourly.time) ? hourly.time.map((value) => textValue(value) ?? '') : []
-    const memberKeys = baseKey ? Object.keys(hourly).filter((key) => key.startsWith(`${baseKey}_member`)) : []
-    const latestIndex = Math.max(0, points.length - 1)
-    const latestMembers = memberKeys.map((key) => Array.isArray(hourly[key]) ? numberValue(hourly[key][latestIndex]) : undefined).filter((value): value is number => value !== undefined)
-    const latest = points.at(-1) ?? latestMembers.reduce((sum, value) => sum + value, 0) / (latestMembers.length || 1)
-    const unit = baseKey ? cleanText(units[baseKey]) ?? '' : ''
-    return {
-      label: `${cleanText(data.timezone)?.replace(/_/g, ' ') ?? 'Ensemble forecast'} · ${baseKey ? previewLabel(baseKey) : 'Forecast range'}`,
-      value: latest,
-      currency: unit || undefined,
-      points: points.length ? points : [latest],
-      dates,
-      metrics: [
-        { label: 'Ensemble members', value: String(memberKeys.length) },
-        { label: 'Latest spread', value: latestMembers.length ? `${formatNumber(Math.min(...latestMembers), 2)} – ${formatNumber(Math.max(...latestMembers), 2)} ${unit}`.trim() : '—' },
-        { label: 'Forecast points', value: String(points.length) },
-      ],
-    }
-  }
-  if (api.id === 'world-bank-indicator-explorer' && Array.isArray(data)) {
-    const rows = Array.isArray(data[1]) ? data[1].filter(isRecord) : []
-    const series = rows.map((row) => ({ date: textValue(row.date) ?? '', value: numberValue(row.value), row })).filter((entry): entry is { date: string; value: number; row: Record<string, unknown> } => entry.value !== undefined).sort((a, b) => Number(a.date) - Number(b.date))
-    const firstRow = series[0]?.row ?? rows[0] ?? {}
-    const indicator = isRecord(firstRow.indicator) ? firstRow.indicator : {}
-    const country = isRecord(firstRow.country) ? firstRow.country : {}
-    const points = series.map((entry) => entry.value)
-    const latest = points.at(-1) ?? 0
-    return {
-      label: `${cleanText(indicator.value) ?? cleanText(indicator.id) ?? api.name} · ${cleanText(country.value) ?? cleanText(firstRow.countryiso3code) ?? 'Country'}`,
-      value: latest,
-      points: points.length ? points : [0],
-      dates: series.map((entry) => entry.date),
-      metrics: [
-        { label: 'Latest year', value: series.at(-1)?.date ?? '—' },
-        { label: 'Range', value: points.length ? `${formatNumber(Math.min(...points), 2)} – ${formatNumber(Math.max(...points), 2)}` : '—' },
-        { label: 'Observations', value: String(points.length) },
-      ],
-    }
-  }
-  const records = findPreviewRecords(data)
-  const rateRecords = records.map((record) => ({ record, value: numberValue(record.rate ?? record.value ?? record.close ?? record.price), date: textValue(record.date ?? record.period ?? record.year) })).filter((item): item is { record: Record<string, unknown>; value: number; date: string | undefined } => item.value !== undefined)
-  const points = rateRecords.map((item) => item.value)
-  const latestRecord = rateRecords.at(-1)?.record ?? records[0] ?? {}
-  const latest = points.at(-1) ?? numberValue(findByKey(data, ['rate', 'value', 'price', 'close'])) ?? 0
-  const pair = latestRecord.base && (latestRecord.quote || latestRecord.currency) ? `${latestRecord.base}/${latestRecord.quote ?? latestRecord.currency}` : api.name
-  const series = points.length ? points : [latest]
-  return {
-    label: String(pair),
-    value: latest,
-    currency: textValue(latestRecord.quote ?? latestRecord.currency),
-    points: series,
-    dates: rateRecords.map((item) => item.date ?? ''),
-    metrics: [
-      { label: 'Period high', value: formatNumber(Math.max(...series), 4) },
-      { label: 'Period low', value: formatNumber(Math.min(...series), 4) },
-      { label: 'Observations', value: compactNumber(series.length) },
-    ],
-  }
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  const clean = values.filter(Number.isFinite).slice(-60)
-  const points = clean.length > 1 ? clean : [clean[0] ?? 0, clean[0] ?? 0]
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const range = max - min || 1
-  const path = points.map((value, index) => `${(index / (points.length - 1)) * 100},${34 - ((value - min) / range) * 27}`).join(' ')
-  return <svg className="market-sparkline" viewBox="0 0 100 38" preserveAspectRatio="none" role="img" aria-label="Price history sparkline"><defs><linearGradient id="marketArea" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#3975f7" stopOpacity=".28"/><stop offset="1" stopColor="#3975f7" stopOpacity="0"/></linearGradient></defs><polygon points={`0,38 ${path} 100,38`} fill="url(#marketArea)"/><polyline points={path} fill="none" stroke="#3975f7" strokeWidth="1.8" vectorEffect="non-scaling-stroke"/></svg>
-}
-
-function MarketPreview({ data, api }: { data: unknown; api: ApiDemo }) {
-  const snapshot = marketSnapshot(api, data)
-  const first = snapshot.points[0] ?? snapshot.value
-  const change = first ? ((snapshot.value - first) / Math.abs(first)) * 100 : 0
-  return <div className="market-preview">
-    <div className="market-summary"><div><span>{snapshot.label}</span><strong>{snapshot.currency ? `${snapshot.currency} ` : ''}{formatNumber(snapshot.value, snapshot.value < 10 ? 4 : 2)}</strong><small className={change < 0 ? 'negative' : ''}>{change < 0 ? '↓' : '↑'} {formatNumber(Math.abs(change), 2)}% across this response</small></div><div className="market-range"><span>{snapshot.dates[0] || 'First point'}</span><span>{snapshot.dates.at(-1) || 'Latest'}</span></div></div>
-    <Sparkline values={snapshot.points}/>
-    <div className="market-metrics">{(snapshot.metrics.length ? snapshot.metrics : [{ label: 'Data points', value: String(snapshot.points.length) }]).map((metric) => <article key={metric.label}><small>{metric.label}</small><strong>{metric.value}</strong></article>)}</div>
   </div>
 }
 
@@ -680,7 +105,7 @@ function FuelPricePreview({ data }: { data: unknown }) {
       const change = value !== undefined && previousValue !== undefined ? value - previousValue : undefined
       return <article key={fuel.key}><small>{fuel.label}</small><strong>{value === undefined ? '—' : `RM ${formatNumber(value, 2)}`}</strong><span className={change !== undefined && change < 0 ? 'down' : ''}>{change === undefined || change === 0 ? 'No weekly change' : `${change > 0 ? '↑' : '↓'} RM ${formatNumber(Math.abs(change), 2)}`}</span><em>{fuel.note}</em></article>
     })}</div>
-    <div className="fuel-history"><div><small>RON95 history</small><strong>{ron95History.length} observations</strong></div><Sparkline values={ron95History}/></div>
+    <div className="fuel-history"><div><small>RON95 history</small><strong>{ron95History.length} observations</strong></div><Sparkline values={ron95History} label="RON95 price history sparkline"/></div>
   </div>
 }
 
@@ -1186,7 +611,7 @@ function FloodForecastPreview({ data }: { data: unknown }) {
   const peakIndex = maxima.indexOf(Math.max(...maxima))
   return <div className="market-preview flood-preview">
     <div className="market-summary"><div><span>River discharge · {formatNumber(numberValue(root.latitude) ?? 0, 3)}, {formatNumber(numberValue(root.longitude) ?? 0, 3)}</span><strong>{formatNumber(discharge[0], 2)} {unit}</strong><small>Current modelled discharge · peak {formatNumber(peak, 2)} {unit}</small></div><div className="market-range"><span>{times[0] ?? 'Today'}</span><span>{times.at(-1) ?? 'Forecast end'}</span></div></div>
-    <Sparkline values={discharge}/>
+    <Sparkline values={discharge} label="River discharge forecast sparkline"/>
     <div className="market-metrics"><article><small>Forecast peak</small><strong>{formatNumber(peak, 2)} {unit}</strong></article><article><small>Peak date</small><strong>{times[peakIndex] ?? '—'}</strong></article><article><small>Mean discharge</small><strong>{means.length ? `${formatNumber(means.reduce((sum, value) => sum + value, 0) / means.length, 2)} ${unit}` : '—'}</strong></article></div>
   </div>
 }
@@ -1287,28 +712,6 @@ function TriviaGamePreview({ data }: { data: unknown }) {
   })}</div></div>
 }
 
-type SemanticCard = {
-  title: string
-  eyebrow: string
-  description?: string
-  badge?: string
-  metrics: Array<{ label: string; value: string }>
-  tags?: string[]
-}
-
-const recordArray = (value: unknown) => Array.isArray(value) ? value.filter(isRecord) : []
-const textArray = (value: unknown) => Array.isArray(value) ? value.map(cleanText).filter((item): item is string => Boolean(item)) : []
-const epochDate = (value: unknown) => {
-  const seconds = numberValue(value)
-  return seconds === undefined ? undefined : new Date(seconds * 1000).toLocaleDateString('en-SG', { day: 'numeric', month: 'short', year: 'numeric' })
-}
-
-function SemanticCards({ cards, emptyTitle }: { cards: SemanticCard[]; emptyTitle: string }) {
-  if (!cards.length) return <div className="weather-empty"><strong>{emptyTitle}</strong><span>The response did not include records for this demo layout.</span></div>
-  const visibleCards = cards.slice(0, 8)
-  return <div className={`semantic-card-grid ${visibleCards.length === 1 ? 'single' : ''}`} aria-label="Semantic response records" data-record-count={visibleCards.length}>{visibleCards.map((card, index) => <article data-record-index={index + 1} key={`${card.title}-${index}`}><header><span aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><div><small>{card.eyebrow}</small><h3>{card.title}</h3></div>{card.badge && <em>{card.badge}</em>}</header>{card.description && <p>{card.description}</p>}<dl>{card.metrics.map((metric) => <div key={metric.label}><dt>{metric.label}</dt><dd>{metric.value}</dd></div>)}</dl>{card.tags?.length ? <footer aria-label="Record tags">{card.tags.slice(0, 5).map((tag) => <span key={tag}>{tag}</span>)}</footer> : null}</article>)}</div>
-}
-
 type DateListItem = {
   key: string
   dateText: string
@@ -1326,10 +729,7 @@ function DateList({ items, className }: { items: DateListItem[]; className?: str
 function DeveloperFeedPreview({ data, api }: { data: unknown; api: ApiDemo }) {
   const root = isRecord(data) ? data : {}
   let cards: SemanticCard[] = []
-  if (api.id === 'crates-io-search') {
-    const crate = isRecord(root.crate) ? root.crate : {}
-    cards = Object.keys(crate).length ? [{ title: cleanText(crate.name) ?? 'Rust crate', eyebrow: `crates.io · v${previewValue(crate.max_version)}`, description: cleanText(crate.description), badge: compactNumber(numberValue(crate.downloads) ?? 0), metrics: [{ label: 'Homepage', value: previewValue(crate.homepage) }, { label: 'Repository', value: previewValue(crate.repository) }], tags: textArray(crate.keywords) }] : []
-  } else if (api.id === 'rubygems-lookup') {
+  if (api.id === 'rubygems-lookup') {
     cards = Object.keys(root).length ? [{ title: cleanText(root.name) ?? 'Ruby gem', eyebrow: `RubyGems · v${previewValue(root.version)}`, description: cleanText(root.info), badge: compactNumber(numberValue(root.downloads) ?? 0), metrics: [{ label: 'Authors', value: previewValue(root.authors) }, { label: 'Licenses', value: textArray(root.licenses).join(', ') || '—' }] }] : []
   } else if (api.id === 'nuget-package-lookup') {
     const lastPage = Array.isArray(root.items) ? root.items[root.items.length - 1] : undefined
@@ -1539,10 +939,6 @@ function ResearchLibraryPreview({ data, api }: { data: unknown; api: ApiDemo }) 
     const journal = isRecord(bibjson.journal) ? bibjson.journal : {}
     return { title: cleanText(bibjson.title) ?? 'Open-access article', eyebrow: authors.slice(0, 3).join(', ') || 'DOAJ', badge: previewValue(bibjson.year), metrics: [{ label: 'Journal', value: previewValue(journal.title) }, { label: 'Publisher', value: previewValue(journal.publisher) }] }
   })
-  else if (api.id === 'gutendex-books') cards = recordArray(root.results).map((book) => {
-    const authors = recordArray(book.authors).map((author) => cleanText(author.name)).filter((value): value is string => Boolean(value))
-    return { title: cleanText(book.title) ?? 'Book', eyebrow: authors.join(', ') || 'Project Gutenberg', badge: previewValue(book.download_count), metrics: [{ label: 'Languages', value: textArray(book.languages).join(', ') || '—' }, { label: 'Subjects', value: textArray(book.subjects).slice(0, 2).join(', ') || '—' }] }
-  })
   else if (api.id === 'datacite-search') cards = recordArray(root.data).map((entry) => {
     const attributes = isRecord(entry.attributes) ? entry.attributes : {}
     const creators = recordArray(attributes.creators).map((creator) => cleanText(creator.name)).filter((value): value is string => Boolean(value))
@@ -1574,26 +970,31 @@ function ResearchLibraryPreview({ data, api }: { data: unknown; api: ApiDemo }) 
     cards = recordArray(list.result).map((paper) => ({ title: cleanText(paper.title) ?? 'Research paper', eyebrow: cleanText(paper.authorString) ?? 'Europe PMC', description: cleanText(paper.journalTitle), badge: previewValue(paper.pubYear), metrics: [{ label: 'Citations', value: previewValue(paper.citedByCount) }, { label: 'Open access', value: paper.isOpenAccess === 'Y' ? 'Yes' : 'No' }, { label: 'Identifier', value: previewValue(paper.doi ?? paper.pmid ?? paper.id) }] }))
   }
   else if (api.id === 'dblp-search') {
-    const result = isRecord(root.result) ? root.result : {}
-    const hits = isRecord(result.hits) ? result.hits : {}
-    cards = recordArray(hits.hit).map((hit) => {
-      const info = isRecord(hit.info) ? hit.info : {}
-      const authorsRoot = isRecord(info.authors) ? info.authors : {}
-      const rawAuthors = authorsRoot.author
-      const authors = Array.isArray(rawAuthors)
-        ? rawAuthors.map((author) => isRecord(author) ? cleanText(author.text) : cleanText(author)).filter((value): value is string => Boolean(value))
-        : [isRecord(rawAuthors) ? cleanText(rawAuthors.text) : cleanText(rawAuthors)].filter((value): value is string => Boolean(value))
-      return {
-        title: cleanText(info.title) ?? 'DBLP publication',
-        eyebrow: authors.slice(0, 4).join(', ') || 'DBLP bibliography',
-        badge: previewValue(info.year),
-        metrics: [
-          { label: 'Venue', value: previewValue(info.venue) },
-          { label: 'Type', value: previewValue(info.type) },
-          { label: 'DOI', value: previewValue(info.doi) },
-        ],
-      }
-    })
+    const bindings = recordArray(recordValue(root.results, 'bindings'))
+    const valueOf = (row: Record<string, unknown>, key: string) => cleanText(recordValue(row[key], 'value'))
+    const publications = new Map<string, { title?: string; year?: string; venue?: string; doi?: string; authors: string[] }>()
+    for (const row of bindings) {
+      const publicationUrl = valueOf(row, 'publ')
+      if (!publicationUrl) continue
+      const current = publications.get(publicationUrl) ?? { authors: [] }
+      current.title ??= valueOf(row, 'title')
+      current.year ??= valueOf(row, 'year')
+      current.venue ??= valueOf(row, 'venue')
+      current.doi ??= valueOf(row, 'doi')
+      const author = valueOf(row, 'authorName')
+      if (author && !current.authors.includes(author)) current.authors.push(author)
+      publications.set(publicationUrl, current)
+    }
+    cards = [...publications.entries()].map(([publicationUrl, publication]) => ({
+      title: publication.title ?? 'DBLP publication',
+      eyebrow: publication.authors.slice(0, 4).join(', ') || 'DBLP bibliography',
+      badge: publication.year ?? '—',
+      metrics: [
+        { label: 'Venue', value: publication.venue ?? '—' },
+        { label: 'DOI', value: publication.doi?.replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '') ?? '—' },
+        { label: 'DBLP record', value: publicationUrl },
+      ],
+    }))
   }
   return <SemanticCards cards={cards} emptyTitle="Research records unavailable"/>
 }
@@ -1947,10 +1348,8 @@ function DataTablePreview({ data, api }: { data: unknown; api: ApiDemo }) {
   let records: Array<Record<string, unknown>> = []
   if (api.id === 'carbon-intensity-gb') records = recordArray(root.data).map((record) => ({ title: 'GB carbon intensity', status: recordValue(record.intensity, 'index'), value: recordValue(record.intensity, 'actual') ?? recordValue(record.intensity, 'forecast'), unit: 'gCO₂/kWh', updated: record.from }))
   else if (api.id === 'ipify-public-ip') records = [{ title: 'Detected public address', value: root.ip, status: String(root.ip ?? '').includes(':') ? 'IPv6' : 'IPv4', source: 'Network response' }]
-  else if (api.id === 'nws-weather') records = recordArray(root.features).map((feature) => isRecord(feature.properties) ? feature.properties : feature)
   else if (api.id === 'usaspending') records = recordArray(root.results)
   else if (api.id === 'wikidata-sparql') records = recordArray(recordValue(recordValue(root.results, 'bindings'), 'items') ?? recordValue(root.results, 'bindings')).map((binding) => Object.fromEntries(Object.entries(binding).map(([key, value]) => [key, recordValue(value, 'value') ?? value])))
-  else if (api.id === 'openfda-drug-labels') records = recordArray(root.results).map((record) => ({ title: textArray(record.openfda && recordValue(record.openfda, 'brand_name'))[0] ?? textArray(record.spl_product_data_elements)[0] ?? 'Drug label', purpose: textArray(record.purpose)[0], warnings: textArray(record.warnings)[0], active_ingredient: textArray(record.active_ingredient)[0] }))
   else if (api.id === 'open-meteo-elevation') {
     const elevationValues = Array.isArray(root.elevation) ? root.elevation : root.elevation === undefined ? [] : [root.elevation]
     const latitudes = Array.isArray(root.latitude) ? root.latitude : [root.latitude]
@@ -2040,17 +1439,6 @@ function DataTablePreview({ data, api }: { data: unknown; api: ApiDemo }) {
       mean_motion: previewValue(satellite.MEAN_MOTION),
       epoch: previewValue(satellite.EPOCH),
     }))
-  } else if (api.id === 'musicbrainz-artist-search') {
-    records = recordArray(root.artists).slice(0, 10).map((artist) => {
-      const lifeSpan = isRecord(artist['life-span']) ? artist['life-span'] : {}
-      return {
-        title: cleanText(artist.name) ?? 'Artist',
-        type: previewValue(artist.type),
-        country: previewValue(artist.country),
-        active_from: previewValue(lifeSpan.begin),
-        disambiguation: previewValue(artist.disambiguation),
-      }
-    })
   } else if (api.id === 'eurostat-population') {
     const dimension = isRecord(root.dimension) ? root.dimension : {}
     const geoLabels = isRecord(recordValue(recordValue(dimension.geo, 'category'), 'label')) ? recordValue(recordValue(dimension.geo, 'category'), 'label') as Record<string, unknown> : {}
@@ -2059,26 +1447,6 @@ function DataTablePreview({ data, api }: { data: unknown; api: ApiDemo }) {
     records = value !== undefined ? [{ title: `Population — ${previewValue(Object.values(geoLabels)[0])}`, year: previewValue(Object.keys(timeIndex)[0]), population: previewValue(value), source: previewValue(root.source) }] : []
   } else if (api.id === 'fema-disasters') {
     records = recordArray(root.DisasterDeclarationsSummaries).slice(0, 10).map((entry) => ({ title: cleanText(entry.declarationTitle) ?? 'Disaster declaration', state: previewValue(entry.state), incident_type: previewValue(entry.incidentType), declared: previewValue(entry.declarationDate) }))
-  } else if (api.id === 'noaa-tides') {
-    const metadata = isRecord(root.metadata) ? root.metadata : {}
-    const reading = recordArray(root.data)[0]
-    records = reading ? [{ title: cleanText(metadata.name) ?? 'Tide station', water_level: `${previewValue(reading.v)} m`, observed: previewValue(reading.t), quality: previewValue(reading.q) }] : []
-  } else if (api.id === 'rdap-domain-lookup') {
-    records = Object.keys(root).length ? [{ title: cleanText(root.ldhName) ?? 'Domain', status: textArray(root.status).join(', ') || '—', handle: previewValue(root.handle) }] : []
-  } else if (api.id === 'pubchem-compound') {
-    const property = recordArray(recordValue(root.PropertyTable, 'Properties'))[0]
-    records = property ? [{ title: cleanText(property.IUPACName) ?? 'Compound', formula: previewValue(property.MolecularFormula), weight: `${previewValue(property.MolecularWeight)} g/mol`, cid: previewValue(property.CID) }] : []
-  } else if (api.id === 'chembl-molecule') {
-    const properties = isRecord(root.molecule_properties) ? root.molecule_properties : {}
-    records = Object.keys(root).length ? [{ title: previewValue(root.pref_name) !== '—' ? previewValue(root.pref_name) : previewValue(root.molecule_chembl_id), formula: previewValue(properties.full_molformula), weight: previewValue(properties.full_mwt), max_phase: previewValue(root.max_phase), first_approval: previewValue(root.first_approval) }] : []
-  } else if (api.id === 'uniprot-protein') {
-    const organism = isRecord(root.organism) ? root.organism : {}
-    records = Object.keys(root).length ? [{ title: cleanText(root.uniProtkbId) ?? 'Protein', organism: previewValue(organism.scientificName), entry_type: previewValue(root.entryType), annotation_score: previewValue(root.annotationScore) }] : []
-  } else if (api.id === 'rcsb-pdb-entry') {
-    const citation = recordArray(root.citation)[0]
-    records = citation ? [{ title: cleanText(citation.title) ?? 'PDB structure', journal: previewValue(citation.journal_abbrev), authors: textArray(citation.rcsb_authors).slice(0, 3).join(', '), doi: previewValue(citation.pdbx_database_id_DOI) }] : []
-  } else if (api.id === 'ensembl-gene-lookup') {
-    records = Object.keys(root).length ? [{ title: cleanText(root.display_name) ?? previewValue(root.id), biotype: previewValue(root.biotype), location: `Chr ${previewValue(root.seq_region_name)}: ${previewValue(root.start)}-${previewValue(root.end)}`, description: cleanText(root.description) }] : []
   } else if (api.id === 'obis-marine-occurrences') {
     records = recordArray(root.results).slice(0, 10).map((occurrence) => ({ title: cleanText(occurrence.scientificName) ?? 'Marine occurrence', date: previewValue(occurrence.date_year ?? occurrence.eventDate), locality: previewValue(occurrence.locality), depth: previewValue(occurrence.depth) }))
   } else if (api.id === 'worms-species-lookup') {
@@ -2096,24 +1464,6 @@ function DataTablePreview({ data, api }: { data: unknown; api: ApiDemo }) {
     records = root.success ? [{ title: `${previewValue(root.city)}, ${previewValue(root.country)}`, ip: previewValue(root.ip), isp: previewValue(connection.isp), timezone: previewValue(recordValue(root.timezone, 'id')) }] : []
   } else if (api.id === 'newton-math-solver') {
     records = Object.keys(root).length ? [{ title: previewValue(root.expression), operation: previewValue(root.operation), result: previewValue(root.result) }] : []
-  } else if (api.id === 'aladhan-prayer-times') {
-    const payload = isRecord(root.data) ? root.data : root
-    const timings = isRecord(payload.timings) ? payload.timings : {}
-    const date = isRecord(payload.date) ? payload.date : {}
-    const gregorian = isRecord(date.gregorian) ? date.gregorian : {}
-    const hijri = isRecord(date.hijri) ? date.hijri : {}
-    const metadata = isRecord(payload.meta) ? payload.meta : {}
-    const method = isRecord(metadata.method) ? metadata.method : {}
-    const methodLabel = cleanText(method.name) || `Method ${previewValue(method.id) || '11'}`
-    const dateLabel = cleanText(hijri.date) || cleanText(gregorian.date) || 'Today'
-    records = Object.entries(timings).slice(0, 10).map(([name, value], index) => ({
-      title: `${cleanText(name)} time`,
-      time: cleanText(value) ?? previewValue(value),
-      ...(index === 0 ? { method: methodLabel, date: dateLabel } : {}),
-    }))
-    if (!records.length) {
-      records = [{ title: 'Prayer times', method: methodLabel, date: dateLabel }]
-    }
   } else if (api.id === 'datamuse-rhymes') {
     records = recordArray(data).slice(0, 10).map((entry) => ({ title: cleanText(entry.word) ?? 'Word', score: previewValue(entry.score), syllables: previewValue(entry.numSyllables) }))
   } else if (api.id === 'open5e-monster-search') {
@@ -2163,7 +1513,7 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   posts: defineApiPreview('posts', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   holidays: defineApiPreview('holidays', ({ api, data }) => <CalendarPreview api={api} data={data}/>),
   'geocoding-search': defineApiPreview('geocoding-search', ({ api, data }) => <LocationPreview api={api} data={data}/>),
-  'aladhan-prayer-times': defineApiPreview('aladhan-prayer-times', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'aladhan-prayer-times': defineApiPreview('aladhan-prayer-times', ({ data }) => <PrayerTimesPreview data={data}/>),
   'open-meteo-air-quality': defineApiPreview('open-meteo-air-quality', ({ api, data }) => <AirQualityForecastPreview data={data}/>),
   'sunrise-sunset': defineApiPreview('sunrise-sunset', ({ data }) => <SolarCyclePreview data={data}/>),
   'nasa-eonet-events': defineApiPreview('nasa-eonet-events', ({ data }) => <NaturalEventsPreview data={data}/>),
@@ -2199,7 +1549,6 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'nvd-cve-detail': defineApiPreview('nvd-cve-detail', ({ api, data }) => <SecurityCenterPreview api={api} data={data}/>),
   'nvd-cves': defineApiPreview('nvd-cves', ({ api, data }) => <SecurityCenterPreview api={api} data={data}/>),
   'nvd-recent-cves': defineApiPreview('nvd-recent-cves', ({ api, data }) => <SecurityCenterPreview api={api} data={data}/>),
-  'nws-weather': defineApiPreview('nws-weather', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'postcodes-io': defineApiPreview('postcodes-io', ({ api, data }) => <LocationPreview api={api} data={data}/>),
   'pypi-json': defineApiPreview('pypi-json', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'stack-exchange': defineApiPreview('stack-exchange', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
@@ -2222,9 +1571,8 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'gbif-species-search': defineApiPreview('gbif-species-search', ({ data }) => <GbifTaxonomyPreview data={data}/>),
   'clinical-trials-search': defineApiPreview('clinical-trials-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
   'europe-pmc-search': defineApiPreview('europe-pmc-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
-  'openfda-drug-labels': defineApiPreview('openfda-drug-labels', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'openfda-drug-labels': defineApiPreview('openfda-drug-labels', ({ data }) => <DrugLabelPreview data={data}/>),
   'coinpaprika-ticker': defineApiPreview('coinpaprika-ticker', ({ api, data }) => <MarketPreview api={api} data={data}/>),
-  'yahoo-finance-sgx-history': defineApiPreview('yahoo-finance-sgx-history', ({ api, data }) => <MarketPreview api={api} data={data}/>),
   'malaysia-fuel-price': defineApiPreview('malaysia-fuel-price', ({ data }) => <FuelPricePreview data={data}/>),
   'open-meteo-marine': defineApiPreview('open-meteo-marine', ({ data }) => <MarineForecastPreview data={data}/>),
   'nobel-prizes': defineApiPreview('nobel-prizes', ({ data }) => <NobelPrizePreview data={data}/>),
@@ -2261,7 +1609,7 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'nasa-image-search': defineApiPreview('nasa-image-search', ({ api, data }) => <MediaGalleryPreview api={api} data={data}/>),
   'lichess-top-players': defineApiPreview('lichess-top-players', ({ data }) => <LichessLeaderboardPreview data={data}/>),
   'pubmed-search': defineApiPreview('pubmed-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
-  'rxnorm-drug-search': defineApiPreview('rxnorm-drug-search', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'rxnorm-drug-search': defineApiPreview('rxnorm-drug-search', ({ data, requestUrl }) => <RxNormDrugPreview data={data} requestUrl={requestUrl}/>),
   'inaturalist-observations': defineApiPreview('inaturalist-observations', ({ api, data }) => <MediaGalleryPreview api={api} data={data}/>),
   'first-epss': defineApiPreview('first-epss', ({ api, data }) => <SecurityCenterPreview api={api} data={data}/>),
   'endoflife-date': defineApiPreview('endoflife-date', ({ data }) => <LifecyclePreview data={data}/>),
@@ -2271,7 +1619,6 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'datacite-search': defineApiPreview('datacite-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
   'ror-search': defineApiPreview('ror-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
   'celestrak-satellites': defineApiPreview('celestrak-satellites', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'musicbrainz-artist-search': defineApiPreview('musicbrainz-artist-search', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'cleveland-museum-search': defineApiPreview('cleveland-museum-search', ({ api, data }) => <MediaGalleryPreview api={api} data={data}/>),
   'scryfall-card-search': defineApiPreview('scryfall-card-search', ({ api, data }) => <MediaGalleryPreview api={api} data={data}/>),
   'dnd5e-spell-lookup': defineApiPreview('dnd5e-spell-lookup', ({ data }) => <DndSpellPreview data={data}/>),
@@ -2280,27 +1627,25 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'eurostat-population': defineApiPreview('eurostat-population', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'bls-timeseries': defineApiPreview('bls-timeseries', ({ api, data }) => <MarketPreview api={api} data={data}/>),
   'fema-disasters': defineApiPreview('fema-disasters', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'noaa-tides': defineApiPreview('noaa-tides', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'rdap-domain-lookup': defineApiPreview('rdap-domain-lookup', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'noaa-tides': defineApiPreview('noaa-tides', ({ data, requestUrl }) => <TideWaterLevelPreview data={data} requestUrl={requestUrl}/>),
+  'rdap-domain-lookup': defineApiPreview('rdap-domain-lookup', ({ data }) => <RdapDomainPreview data={data}/>),
   'languagetool-grammar-check': defineApiPreview('languagetool-grammar-check', ({ data }) => <GrammarPreview data={data}/>),
   'zenodo-search': defineApiPreview('zenodo-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
   'doaj-search': defineApiPreview('doaj-search', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
-  'pubchem-compound': defineApiPreview('pubchem-compound', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'chembl-molecule': defineApiPreview('chembl-molecule', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'uniprot-protein': defineApiPreview('uniprot-protein', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'rcsb-pdb-entry': defineApiPreview('rcsb-pdb-entry', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'ensembl-gene-lookup': defineApiPreview('ensembl-gene-lookup', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'pubchem-compound': defineApiPreview('pubchem-compound', ({ data }) => <PubChemCompoundPreview data={data}/>),
+  'chembl-molecule': defineApiPreview('chembl-molecule', ({ data }) => <ChemblMoleculePreview data={data}/>),
+  'uniprot-protein': defineApiPreview('uniprot-protein', ({ data }) => <ProteinAnnotationPreview data={data}/>),
+  'rcsb-pdb-entry': defineApiPreview('rcsb-pdb-entry', ({ data }) => <PdbStructurePreview data={data}/>),
+  'ensembl-gene-lookup': defineApiPreview('ensembl-gene-lookup', ({ data }) => <EnsemblGenePreview data={data}/>),
   'obis-marine-occurrences': defineApiPreview('obis-marine-occurrences', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'worms-species-lookup': defineApiPreview('worms-species-lookup', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'paleobiodb-taxa': defineApiPreview('paleobiodb-taxa', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'usgs-water-legacy': defineApiPreview('usgs-water-legacy', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'crates-io-search': defineApiPreview('crates-io-search', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'rubygems-lookup': defineApiPreview('rubygems-lookup', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'nuget-package-lookup': defineApiPreview('nuget-package-lookup', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'internet-archive-search': defineApiPreview('internet-archive-search', ({ api, data }) => <MediaGalleryPreview api={api} data={data}/>),
   'ipwhois-lookup': defineApiPreview('ipwhois-lookup', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'newton-math-solver': defineApiPreview('newton-math-solver', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'gutendex-books': defineApiPreview('gutendex-books', ({ api, data }) => <ResearchLibraryPreview api={api} data={data}/>),
   'datamuse-rhymes': defineApiPreview('datamuse-rhymes', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'open5e-monster-search': defineApiPreview('open5e-monster-search', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'dicebear-avatar': defineApiPreview('dicebear-avatar', ({ api, requestUrl }) => <GeneratedImagePreview api={api} requestUrl={requestUrl}/>),
@@ -2319,26 +1664,26 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'malaysia-core-cpi': defineApiPreview('malaysia-core-cpi', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'malaysia-household-income': defineApiPreview('malaysia-household-income', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'malaysia-population': defineApiPreview('malaysia-population', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'openfda-food-recalls': defineApiPreview('openfda-food-recalls', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'openfda-food-recalls': defineApiPreview('openfda-food-recalls', ({ data }) => <FoodRecallPreview data={data}/>),
   'iconify-search': defineApiPreview('iconify-search', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'homebrew-formula-json': defineApiPreview('homebrew-formula-json', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'npm-download-counts': defineApiPreview('npm-download-counts', ({ data }) => <DownloadsPreview data={data}/>),
   'geoboundaries-admin-boundaries': defineApiPreview('geoboundaries-admin-boundaries', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'osrm-route': defineApiPreview('osrm-route', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'osrm-route': defineApiPreview('osrm-route', ({ data }) => <OsrmRoutePreview data={data}/>),
   'opendota-pro-matches': defineApiPreview('opendota-pro-matches', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'openligadb-matches': defineApiPreview('openligadb-matches', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'uk-parliament-members': defineApiPreview('uk-parliament-members', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'mlb-stats-api': defineApiPreview('mlb-stats-api', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'gleif-lei': defineApiPreview('gleif-lei', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'fdic-bankfind': defineApiPreview('fdic-bankfind', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'gleif-lei': defineApiPreview('gleif-lei', ({ data }) => <GleifLeiPreview data={data}/>),
+  'fdic-bankfind': defineApiPreview('fdic-bankfind', ({ data }) => <FdicBankPreview data={data}/>),
   'uk-food-hygiene': defineApiPreview('uk-food-hygiene', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'uk-flood-monitoring': defineApiPreview('uk-flood-monitoring', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'unhcr-refugees': defineApiPreview('unhcr-refugees', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'hdx-humanitarian-datasets': defineApiPreview('hdx-humanitarian-datasets', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
   'open-meteo-climate': defineApiPreview('open-meteo-climate', ({ api, data }) => <MarketPreview api={api} data={data}/>),
   'models-dev': defineApiPreview('models-dev', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'vatcomply': defineApiPreview('vatcomply', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
-  'mempool-space-btc': defineApiPreview('mempool-space-btc', ({ api, data }) => <DataTablePreview api={api} data={data}/>),
+  'vatcomply': defineApiPreview('vatcomply', ({ data }) => <VatcomplyRatesPreview data={data}/>),
+  'mempool-space-btc': defineApiPreview('mempool-space-btc', ({ data }) => <MempoolFeePreview data={data}/>),
   'metacpan': defineApiPreview('metacpan', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'hexpm': defineApiPreview('hexpm', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
   'pub-dev': defineApiPreview('pub-dev', ({ api, data }) => <DeveloperFeedPreview api={api} data={data}/>),
@@ -2410,6 +1755,28 @@ const previewMeta: Record<PreviewLayout, { icon: string; eyebrow: string; title:
   'security-center': { icon: '◇', eyebrow: 'Live response · Security layout', title: 'Security advisory center', description: 'Vulnerability and product records organized by severity, identifiers, and review dates.' },
   'research-library': { icon: '▤', eyebrow: 'Live response · Research layout', title: 'Research library', description: 'Books, papers, and clinical studies presented with authorship, status, and identifiers.' },
   'dictionary-entry': { icon: 'Aa', eyebrow: 'Live response · Language layout', title: 'Dictionary entry', description: 'Definitions, parts of speech, examples, and synonyms mapped from the word response.' },
+  'drug-label': { icon: 'Rx', eyebrow: 'Live response · Drug label layout', title: 'Drug label summary', description: 'Product identity and regulated label sections mapped from the returned openFDA record.' },
+  'food-recalls': { icon: 'FDA', eyebrow: 'Live response · Recall layout', title: 'Food recall enforcement report', description: 'Recall identity, classification, status, affected product, firm, dates, reason, and distribution mapped from FDA enforcement records.' },
+  'prayer-schedule': { icon: '◷', eyebrow: 'Live response · Prayer schedule', title: 'Daily prayer times', description: 'Prayer times, Gregorian/Hijri date context, timezone, coordinates, and calculation method mapped from the AlAdhan response.' },
+  'drug-terminology': { icon: 'Rx', eyebrow: 'Live response · Drug terminology', title: 'RxNorm drug concepts', description: 'Clinical and branded drug concepts grouped by RxNorm term type with stable RxCUI identifiers.' },
+  'coastal-water-level': { icon: '≈', eyebrow: 'Live response · Coastal observation', title: 'Coastal water level', description: 'Station identity, observed height, datum, timing, and NOAA quality-control evidence from the latest CO-OPS water-level response.' },
+  'protein-annotation': { icon: 'P', eyebrow: 'Live response · Protein annotation', title: 'Protein annotation', description: 'Stable UniProtKB identity, organism, gene, sequence facts, and bounded provider function annotation.' },
+  'molecular-structure': { icon: '3D', eyebrow: 'Live response · Molecular structure', title: 'Molecular structure record', description: 'PDB entry identity, experimental method, resolution, archive facts, entity counts, and primary publication metadata.' },
+  'molecule-profile': { icon: '◇', eyebrow: 'Live response · Molecule profile', title: 'ChEMBL molecule profile', description: 'Molecule identity, provider chemical properties, development metadata, structure identifiers, and classifications.' },
+  'compound-properties': { icon: '◇', eyebrow: 'Live response · Compound properties', title: 'PubChem compound properties', description: 'Stable PubChem compound identity with the requested molecular formula, molecular weight, and IUPAC name.' },
+  'gene-locus': { icon: 'DNA', eyebrow: 'Live response · Gene locus', title: 'Ensembl gene locus', description: 'Stable gene identity, species, assembly coordinates, strand, biotype, canonical transcript, and provider description.' },
+  'domain-registration': { icon: '◎', eyebrow: 'Live response · Registration layout', title: 'Domain registration', description: 'Registrar identity, lifecycle dates, nameservers, registry handle, and complete RDAP status.' },
+  'legal-entity': { icon: 'LEI', eyebrow: 'Live response · Entity layout', title: 'Legal entity profile', description: 'Official LEI identity, headquarters, registration state, mapped identifiers, and available corporate relationship links.' },
+  'bank-institution': { icon: '$', eyebrow: 'Live response · Banking layout', title: 'FDIC institution profile', description: 'Institution identity, operating status, headquarters, reported assets/deposits, offices, and regulator metadata.' },
+  'route-summary': { icon: '↝', eyebrow: 'Live response · Route layout', title: 'Route summary', description: 'Provider route distance, estimated travel time, snapped endpoints, geometry size, and turn-by-turn steps.' },
+  'transaction-fees': { icon: '₿', eyebrow: 'Live response · Fee layout', title: 'Bitcoin fee recommendations', description: 'Provider-recommended sat/vB rates for fastest, half-hour, hour, economy, and minimum transaction targets.' },
+  'availability-board': { icon: 'P', eyebrow: 'Live response · Availability layout', title: 'Availability board', description: 'Capacity, availability, occupancy, and record coverage mapped into an operational status board.' },
+  'collection-index': { icon: '▦', eyebrow: 'Live response · Collection index', title: 'Collection index', description: 'Collection match counts and provider object identifiers exposed as a semantic search index.' },
+  'manufacturer-directory': { icon: 'M', eyebrow: 'Live response · Directory layout', title: 'Manufacturer directory', description: 'Manufacturer identities and registry identifiers presented as a semantic directory.' },
+  'taxonomy-directory': { icon: 'T', eyebrow: 'Live response · Taxonomy layout', title: 'Taxonomy directory', description: 'Scientific names, ranks, status, lineage, and taxonomy identifiers presented as domain records.' },
+  'motorsport-results': { icon: 'F1', eyebrow: 'Live response · Motorsport layout', title: 'Motorsport results', description: 'Race-session, qualifying, standings, driver, constructor, and timing facts mapped into competition results.' },
+  'quote-card': { icon: '“', eyebrow: 'Live response · Quote layout', title: 'Quote card', description: 'Quoted text, speaker identity, and source work presented as a readable semantic quotation.' },
+  'character-dossier': { icon: '✦', eyebrow: 'Live response · Character layout', title: 'Character dossier', description: 'Character identity, physical attributes, appearances, and relationship facts presented as semantic profiles.' },
   'data-table': { icon: '▦', eyebrow: 'Live response · Data layout', title: 'Structured data view', description: 'Purpose-built records that expose the most useful values from this response.' },
   'fuel-dashboard': { icon: '⛽', eyebrow: 'Live response · Fuel market layout', title: 'Malaysia fuel board', description: 'Official weekly pump prices, subsidy tiers, changes, and price history in a retail-market dashboard.' },
   'marine-forecast': { icon: '≈', eyebrow: 'Live response · Marine layout', title: 'Marine forecast', description: 'Wave, current, bearing, period, and sea-temperature series presented as a coastal conditions cockpit.' },

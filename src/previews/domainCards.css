@@ -91,3 +91,108 @@
 @media (prefers-reduced-motion: reduce) {
   .domain-card * { scroll-behavior: auto; }
 }
+
+/* Route summary loads with the lazy response-preview chunk. */
+.preview-route-summary .semantic-card-grid header > span { color: #245b71; background: #e8f4f8; }
+.route-step-panel { margin-top: 12px; padding: 15px; border: 1px solid #dfe6ef; border-radius: 12px; background: #fff; }
+.route-step-panel > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.route-step-panel > header small { color: #8390a4; font-weight: 700; text-transform: uppercase; }
+.route-step-panel > header h3 { margin: 3px 0 0; color: #1e2d47; }
+.route-step-panel > header > span { color: #718096; font-size: 12px; font-weight: 700; }
+.route-step-panel ol { margin: 13px 0 0; padding: 0; display: grid; gap: 7px; list-style: none; }
+.route-step-panel li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 9px; padding-top: 8px; border-top: 1px solid #edf1f5; }
+.route-step-panel li > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: #3d647c; background: #e9f3f7; font: 760 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.route-step-panel li div { min-width: 0; display: grid; gap: 2px; }
+.route-step-panel li b { color: #718096; font-size: 10px; text-transform: uppercase; }
+.route-step-panel li strong { overflow-wrap: anywhere; color: #25354d; }
+.route-step-panel li small, .route-step-panel > p { color: #748196; }
+.route-step-panel > p { margin: 12px 0 0; line-height: 1.5; }
+
+/* AlAdhan prayer schedule: semantic daily timings plus calendar/method context. */
+.prayer-time-list { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 10px; list-style: none; }
+.prayer-time-list li { min-width: 0; padding: 14px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid #d7e1ec; border-radius: 11px; background: #fff; }
+.prayer-time-list li > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: #4a5f7b; background: #eef3f8; font: 750 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prayer-time-list li div { min-width: 0; }
+.prayer-time-list strong, .prayer-time-list small { display: block; }
+.prayer-time-list strong { color: #23344d; }
+.prayer-time-list small { margin-top: 2px; color: #708096; font-size: 11px; }
+.prayer-time-list time { color: #173f70; font: 750 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.prayer-extra { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.prayer-extra > h4 { margin-bottom: 12px; }
+.prayer-extra dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 10px; }
+.prayer-extra dl > div { min-width: 0; padding: 11px 12px; border-radius: 9px; background: #f5f8fb; }
+.prayer-extra dt { color: #67788e; font-size: 11px; }
+.prayer-extra dd { margin: 4px 0 0; color: #2c405c; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* RxNorm terminology: group standardized concepts by official term type rather than flattening the response. */
+.rxnorm-groups { display: grid; gap: 18px; margin-top: 20px; }
+.rxnorm-groups > section { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.rxnorm-groups > section > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.rxnorm-groups > section > header > span { color: #62758d; font-size: 12px; font-weight: 650; }
+.rxnorm-groups ol { margin: 14px 0 0; padding: 0; display: grid; gap: 9px; list-style: none; }
+.rxnorm-groups li { min-width: 0; display: grid; gap: 4px; padding: 12px 0 0; border-top: 1px solid #edf1f5; }
+.rxnorm-groups li strong, .rxnorm-groups li span, .rxnorm-groups li code { overflow-wrap: anywhere; }
+.rxnorm-groups li code { color: #1555bf; font-size: 12px; }
+.rxnorm-groups li span { color: #62758d; font-size: 12px; }
+
+
+/* NOAA CO-OPS: latest observed height, datum, timing, and provider QA/QC remain explicit. */
+.tide-reading { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; margin: 18px 0; padding: 20px; border: 1px solid #c9dce9; border-radius: 13px; background: #f5fbfe; }
+.tide-reading > div { min-width: 0; }
+.tide-reading > div > span { display: block; color: #4f6b7d; font-size: 12px; font-weight: 700; }
+.tide-reading > div > strong { display: block; margin: 6px 0; color: #123f5b; font-size: clamp(34px, 6cqi, 58px); line-height: 1.08; letter-spacing: -.04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tide-reading > div > strong small { font-size: 18px; letter-spacing: 0; }
+.tide-reading > div > p { color: #587184; font-size: 12px; }
+.tide-reading > dl { margin: 0; display: grid; gap: 10px; }
+.tide-reading > dl > div { min-width: 0; padding: 11px 12px; border-radius: 9px; background: #fff; }
+.tide-reading dt, .tide-quality dt { color: #60758a; font-size: 11px; }
+.tide-reading dd, .tide-quality dd { margin: 4px 0 0; color: #223c53; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tide-quality { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.tide-quality h4 { margin-bottom: 12px; }
+.tide-quality dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+.tide-quality dl > div { min-width: 0; padding: 12px; border: 1px solid #e0e8f0; border-radius: 9px; background: #fff; }
+@container domain-card (max-width: 620px) {
+  .tide-reading { grid-template-columns: 1fr; padding: 16px; }
+}
+
+/* UniProtKB: stable protein identity, sequence facts, and bounded provider function annotation. */
+.protein-identifiers { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.protein-identifiers h4 { margin-bottom: 10px; }
+.protein-identifiers ul { margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; list-style: none; }
+.protein-identifiers li { min-width: 0; padding: 7px 10px; border: 1px solid #d8e1ec; border-radius: 8px; background: #f6f9fc; }
+.protein-functions { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dce4ef; }
+.protein-functions > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.protein-functions > header > span { color: #62758d; font-size: 12px; font-weight: 650; }
+.protein-functions ol { margin: 14px 0 0; padding: 0; display: grid; gap: 12px; list-style: none; }
+.protein-functions li { min-width: 0; padding: 15px; border: 1px solid #d7e1ec; border-radius: 11px; background: #fff; }
+.protein-functions li strong { display: block; margin-bottom: 6px; color: #284763; overflow-wrap: anywhere; }
+.protein-functions li p { color: #3f536d; line-height: 1.65; overflow-wrap: anywhere; }
+
+
+.structure-citation { margin-top: 22px; padding: 18px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.structure-citation header { display: grid; gap: 5px; }
+.structure-citation > p { margin-top: 10px; color: #435972; overflow-wrap: anywhere; }
+.structure-citation > p strong { color: #203149; }
+.structure-citation dl { margin: 14px 0 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); gap: 10px; }
+.structure-citation dl > div { min-width: 0; padding-top: 10px; border-top: 1px solid #e3e9f0; }
+.structure-citation dt { color: #60758a; font-size: 11px; }
+.structure-citation dd { margin: 4px 0 0; font-weight: 650; overflow-wrap: anywhere; }
+
+/* ChEMBL: molecule identity, provider properties, development flags, and classifications. */
+.molecule-administration, .molecule-structure, .molecule-classifications, .molecule-cross-references { margin-top: 22px; padding-top: 18px; border-top: 1px solid #dce4ef; }
+.molecule-administration h4, .molecule-structure h4, .molecule-cross-references h4 { margin-bottom: 12px; }
+.molecule-administration dl, .molecule-structure dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr)); gap: 10px; }
+.molecule-administration dl > div, .molecule-structure dl > div { min-width: 0; padding: 12px; border: 1px solid #e0e7ef; border-radius: 9px; background: #fff; }
+.molecule-administration dt, .molecule-structure dt { color: #60758a; font-size: 11px; }
+.molecule-administration dd, .molecule-structure dd { margin: 5px 0 0; color: #223c53; font-weight: 650; overflow-wrap: anywhere; }
+.molecule-classifications > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.molecule-classifications > header > span { color: #62758d; font-size: 12px; font-weight: 650; }
+.molecule-classifications ul, .molecule-cross-references ul { margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 8px; list-style: none; }
+.molecule-classifications li { padding: 7px 10px; border: 1px solid #d8e1ec; border-radius: 8px; background: #f6f9fc; }
+.molecule-cross-references li { min-width: 0; display: grid; gap: 3px; padding: 10px 12px; border: 1px solid #d8e1ec; border-radius: 9px; background: #fff; }
+.molecule-cross-references li strong { color: #40556f; font-size: 11px; }
+
+/* Ensembl stable-ID lookup: gene identity and assembly-bound locus context. */
+.gene-description { margin-top: 22px; padding: 18px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.gene-description h4 { color: #263d59; }
+.gene-description p { margin-top: 9px; color: #415975; line-height: 1.65; overflow-wrap: anywhere; }

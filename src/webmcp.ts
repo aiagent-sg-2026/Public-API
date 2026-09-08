@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiCategories, apiCatalog, getApiById, getDefaultParameters, type ApiDemo } from './apiCatalog'
+import { apiCategories, apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, type ApiDemo } from './apiCatalog'
 import { buildRequestLabUrl } from './routes'
 
 type ToolInput = Record<string, unknown>
@@ -127,14 +127,14 @@ const TOOL_SPECS = [
   },
   {
     name: 'run_public_api_demo',
-    description: 'Run one of the page public API demos and return its live JSON response.',
+    description: 'Run a catalog API that permits structured agent execution and return its live JSON response. Provider manual-only policies fail closed.',
     inputSchema: {
       type: 'object',
       properties: {
         id: {
           type: 'string',
-          enum: apiCatalog.map((api) => api.id),
-          description: 'The public API demo ID.',
+          enum: apiCatalog.filter((api) => getAgentExecutionPolicy(api).mode === 'enabled').map((api) => api.id),
+          description: 'The public API demo ID. Manual-only provider endpoints are excluded.',
         },
         parameters: {
           type: 'object',
@@ -145,7 +145,7 @@ const TOOL_SPECS = [
       required: ['id'],
     },
     annotations: { readOnlyHint: true, untrustedContentHint: true },
-    uiLabel: 'Execute a live request and return JSON',
+    uiLabel: 'Execute permitted live requests and return JSON',
     uiType: 'Execute' as ToolUiType,
   },
 ] as const
@@ -186,7 +186,10 @@ export function useWebMcp({
             documentationUrl: api.documentationUrl,
             method: api.method ?? 'GET',
             requestLabUrl: buildRequestLabUrl(api.id),
-            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, options }) => ({
+            agentExecution: getAgentExecutionPolicy(api),
+            automatedVerification: getAutomatedVerificationPolicy(api),
+            ...(api.usageNote ? { usageNote: api.usageNote } : {}),
+            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, minLength, maxLength, options }) => ({
               id,
               label,
               type,
@@ -194,6 +197,8 @@ export function useWebMcp({
               help,
               ...(min === undefined ? {} : { min }),
               ...(max === undefined ? {} : { max }),
+              ...(minLength === undefined ? {} : { minLength }),
+              ...(maxLength === undefined ? {} : { maxLength }),
               ...(options?.length ? { options: options.map(({ label: optionLabel, value }) => ({ label: optionLabel, value })) } : {}),
             })),
           }))
@@ -227,6 +232,10 @@ export function useWebMcp({
         const api = getApiById(id)
         if (!api) {
           throw new Error('Unknown API demo ID.')
+        }
+        const executionPolicy = getAgentExecutionPolicy(api)
+        if (executionPolicy.mode === 'manual-only') {
+          throw new Error(`AGENT_EXECUTION_BLOCKED: ${executionPolicy.reason}`)
         }
         const mergedParameters = {
           ...getDefaultParameters(api),

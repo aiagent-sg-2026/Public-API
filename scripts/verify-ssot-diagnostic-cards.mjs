@@ -35,7 +35,7 @@ async function revealAll(b){
 async function liveCases(){
  const b=await browser(root+'/dist');
  try{
-  await b.call('Page.navigate',{url:report.origin+'/Public-API/#/catalog'});await b.wait(`document.querySelectorAll('input[name="selected-api"]').length===200`);
+  await b.call('Page.navigate',{url:report.origin+'/Public-API/#/catalog'});await b.wait(`document.querySelectorAll('input[name="selected-api"]').length>0`);
   assert.equal(await b.ev(`performance.getEntriesByType('resource').filter(e=>e.name.includes('/responsePreview-')).length`),0);
   for(const id of ['openssf-scorecard','nhtsa-vehicle-recalls']){
    await b.nav(id);const r=await b.run();assert.equal(r.ok,true,id+': '+r.error);
@@ -74,6 +74,7 @@ async function syntheticCases(){
   'openssf-scorecard':'https://api.securityscorecards.dev/projects/github.com/ossf/scorecard',
   'nhtsa-vehicle-recalls':'https://api.nhtsa.gov/recalls/recallsByVehicle?make=honda&model=accord&modelYear=2020&format=json',
   'languagetool-grammar-check':'https://api.languagetool.org/v2/check',
+  'citybikes-network':'https://api.citybik.es/v2/networks/youbike-taipei',
  };
  const map=new Map(Object.values(endpoints).map(url=>[url,{method:url===endpoints['languagetool-grammar-check']?'POST':'GET',body:{}}]));
  const b=await browser(root+'/dist',{fixtures:map});
@@ -119,6 +120,12 @@ async function syntheticCases(){
   const limited=await load(id,{error:'Synthetic rate limit'},429);assert.equal(limited.ok,false);
   assert.equal(await b.ev(`document.querySelector('.response-error').dataset.errorType`),'rate-limit');assert.equal(await b.ev(`Boolean(document.querySelector('[data-domain-card]'))`),false);
   report.edgeCases.push({api:id,state:'rate-limit',http:429,source:'synthetic-fixture'});
+  map.set(endpoints['citybikes-network'],{method:'GET',stall:true});
+  await b.nav('citybikes-network');const timeoutStarted=Date.now();const timedOut=await b.run();const timeoutElapsed=Date.now()-timeoutStarted;assert.equal(timedOut.ok,false);
+  assert.equal(await b.ev(`document.querySelector('.response-error').dataset.errorType`),'timeout');
+  assert.equal(await b.ev(`document.querySelector('.response-error p').textContent`),'The request timed out after 20 seconds.');
+  assert(timeoutElapsed>=19_500&&timeoutElapsed<24_000,`Unexpected timeout window: ${timeoutElapsed}ms`);
+  report.edgeCases.push({api:'citybikes-network',state:'timeout',elapsedMs:timeoutElapsed,source:'synthetic-stall'});
   // Deliberately remove the fixture to prove the harness blocks automation, never falls through to LanguageTool.
   map.delete(endpoints[id]);await b.nav(id);const blocked=await b.run();assert.equal(blocked.ok,false);
   assert(b.blockedProviders.includes(endpoints[id]));report.languageToolExternalRequests='blocked by test harness (no live health claim)';

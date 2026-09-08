@@ -9,11 +9,14 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "build:pages": "npm run build -- --base=/Public-API/",
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:browser:domain-cards": "node scripts/verify-ssot-domain-cards.mjs",
-    "test:browser:diagnostic-cards": "node scripts/verify-ssot-diagnostic-cards.mjs"
+    "test:browser:diagnostic-cards": "node scripts/verify-ssot-diagnostic-cards.mjs",
+    "test:browser:provider-policy": "node scripts/verify-provider-execution-policy.mjs",
+    "test:browser:health-sweep": "node scripts/verify-browser-health-sweep.mjs"
   },
   "dependencies": {
     "@vitejs/plugin-react": "^6.0.3",

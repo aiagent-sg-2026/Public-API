@@ -6,7 +6,7 @@ import { ResponseDemoPreview } from '../responsePreview'
 import { ColorPreview, colorModel } from './ColorPreview'
 import { DnsPreview, dnsModel } from './DnsPreview'
 import { DownloadsPreview, downloadsModel } from './DownloadsPreview'
-import { CoinbaseRatesPreview, ExchangeRateApiPreview, coinbaseRateModel, exchangeRateModel } from './ExchangeRatesPreview'
+import { CoinbaseRatesPreview, ExchangeRateApiPreview, VatcomplyRatesPreview, coinbaseRateModel, exchangeRateModel, vatcomplyRateModel } from './ExchangeRatesPreview'
 import { LifecyclePreview, lifecycleModel } from './LifecyclePreview'
 import { CopyValue, finite, isoDate } from './cardPrimitives'
 
@@ -125,6 +125,14 @@ describe('DNS diagnostic card', () => {
 })
 
 describe('currency conversion cards', () => {
+  it('maps VATComply /rates without implying separate VAT or IBAN operations', () => {
+    const fixture = { date: '2026-09-04', base: 'EUR', rates: { USD: 1.1622, GBP: 0.85898, SGD: 1.4724 } }
+    expect(vatcomplyRateModel(fixture)).toMatchObject({ base: 'EUR', updated: '2026-09-04' })
+    render(<VatcomplyRatesPreview data={fixture}/>)
+    expect(screen.getByText('1 EUR → USD')).toBeInTheDocument()
+    expect(screen.getAllByText('1.1622').length).toBeGreaterThan(0)
+    expect(screen.getByText(/VAT-number and IBAN validation are separate provider endpoints/)).toBeInTheDocument()
+  })
   it('preserves supplied fiat and crypto precision and does not invent Coinbase update time', () => {
     expect(exchangeRateModel(rateFixture).rates.find((r) => r.code === 'USD')?.raw).toBe('0.789123')
     const fixture = { data: { currency: 'EUR', rates: { USD: '1.15990000', BTC: '0.000010123456' } } }
@@ -259,6 +267,7 @@ describe('Phase 2 API-owned SSOT integration', () => {
     ['endoflife-date', 'release-lifecycle', lifecycleFixture],
     ['exchange-rate-current', 'exchange-rates', rateFixture],
     ['ecb-fx-rates', 'exchange-rates', { data: { currency: 'EUR', rates: { USD: '1.1599' } } }],
+    ['vatcomply', 'exchange-rates', { date: '2026-09-04', base: 'EUR', rates: { USD: 1.1622, GBP: 0.85898, SGD: 1.4724 } }],
   ] as const
   it.each(cases)('%s uses its dedicated composition within the existing V2 shell', (id, layout, data) => {
     const api = apiCatalog.find((entry) => entry.id === id)!

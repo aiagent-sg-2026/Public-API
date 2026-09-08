@@ -35,15 +35,31 @@ export type FieldOption = {
   value: string
 }
 
+export type AgentExecutionPolicy =
+  | { mode: 'enabled' }
+  | { mode: 'manual-only'; reason: string; policyUrl?: string }
+
+export type AutomatedVerificationPolicy =
+  | { mode: 'enabled' }
+  | {
+      mode: 'cadence-limited'
+      minimumIntervalSeconds: number
+      retryOnNon2xx: false
+      reason: string
+      policyUrl?: string
+    }
+
 export type ApiField = {
   id: string
   label: string
-  type: 'text' | 'number' | 'select'
+  type: 'text' | 'number' | 'select' | 'date'
   defaultValue: string
   help: string
   placeholder?: string
   min?: number
   max?: number
+  minLength?: number
+  maxLength?: number
   options?: FieldOption[]
 }
 
@@ -65,12 +81,35 @@ export type ApiDemo = {
   parseResponse?: (text: string) => unknown
   risk?: 'Low' | 'Review'
   usageNote?: string
+  agentExecution?: Extract<AgentExecutionPolicy, { mode: 'manual-only' }>
+  automatedVerification?: Extract<AutomatedVerificationPolicy, { mode: 'cadence-limited' }>
 }
 
 const encode = (value: string) => encodeURIComponent(value.trim())
 
+const isIsoCalendarDate = (value: string): boolean => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) return false
+  const [, yearText, monthText, dayText] = match
+  const year = Number(yearText)
+  const month = Number(monthText)
+  const day = Number(dayText)
+  const parsed = new Date(Date.UTC(year, month - 1, day))
+  return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day
+}
+
+const toDmyDate = (value: string): string => {
+  const trimmed = value.trim()
+  if (!isIsoCalendarDate(trimmed)) return trimmed
+  const [year, month, day] = trimmed.split('-')
+  return `${day}-${month}-${year}`
+}
+
 const clampInt = (value: string, min: number, max: number, fallback: number): number =>
   Math.min(max, Math.max(min, Number.parseInt(value, 10) || fallback))
+
+const sparqlStringLiteral = (value: string): string =>
+  `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`
 
 const numberField = (id: string, params: Omit<ApiField, 'id' | 'type'>): ApiField => ({ id, type: 'number', ...params })
 const textField = (id: string, params: Omit<ApiField, 'id' | 'type'>): ApiField => ({ id, type: 'text', ...params })
@@ -268,54 +307,6 @@ const daysAgo = (days: number) => {
   const date = new Date(localNow)
   date.setDate(date.getDate() - days)
   return date
-}
-
-export const yahooSgxSymbols: FieldOption[] = [
-  { value: 'D05', label: 'D05 · DBS Group' },
-  { value: 'O39', label: 'O39 · OCBC Bank' },
-  { value: 'U11', label: 'U11 · UOB' },
-  { value: 'Z74', label: 'Z74 · Singtel' },
-  { value: 'C6L', label: 'C6L · Singapore Airlines' },
-  { value: 'S68', label: 'S68 · Singapore Exchange' },
-  { value: 'A17U', label: 'A17U · CapitaLand Ascendas REIT' },
-  { value: 'C38U', label: 'C38U · CapitaLand Integrated Commercial Trust' },
-  { value: 'M44U', label: 'M44U · Mapletree Logistics Trust' },
-  { value: 'N2IU', label: 'N2IU · Mapletree Pan Asia Commercial Trust' },
-  { value: 'ME8U', label: 'ME8U · Mapletree Industrial Trust' },
-  { value: 'AJBU', label: 'AJBU · Keppel DC REIT' },
-  { value: 'BN4', label: 'BN4 · Keppel' },
-  { value: 'F34', label: 'F34 · Wilmar International' },
-  { value: 'G13', label: 'G13 · Genting Singapore' },
-  { value: 'C52', label: 'C52 · ComfortDelGro' },
-  { value: 'S63', label: 'S63 · ST Engineering' },
-  { value: 'Y92', label: 'Y92 · Thai Beverage' },
-  { value: 'V03', label: 'V03 · Venture Corporation' },
-  { value: 'U14', label: 'U14 · UOL Group' },
-  { value: 'BS6', label: 'BS6 · Yangzijiang Shipbuilding' },
-  { value: 'S58', label: 'S58 · SATS' },
-]
-
-const parseReaderJson = (text: string): unknown => {
-  const trimmed = text.trim()
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    const parsed = JSON.parse(trimmed) as unknown
-    if (parsed && typeof parsed === 'object' && 'data' in parsed) {
-      const data = (parsed as { data?: unknown }).data
-      if (data && typeof data === 'object' && 'content' in data) {
-        const content = (data as { content?: unknown }).content
-        if (typeof content === 'string') return JSON.parse(content) as unknown
-      }
-    }
-    return parsed
-  }
-
-  const marker = 'Markdown Content:'
-  const markerIndex = text.indexOf(marker)
-  if (markerIndex === -1) {
-    const preview = trimmed.replace(/\s+/g, ' ').slice(0, 120)
-    throw new Error(`The compatibility relay returned an unexpected response${preview ? `: ${preview}` : '.'}`)
-  }
-  return JSON.parse(text.slice(markerIndex + marker.length).trim()) as unknown
 }
 
 const additionalInteractiveApis: ApiDemo[] = [
@@ -591,12 +582,6 @@ const importedRecommendedApis: ApiDemo[] = [
     accent: '#155e75', monogram: 'NR',
   }),
   fixedApi({
-    id: 'nws-weather', name: 'NWS Weather API', provider: 'National Weather Service', category: 'Weather',
-    description: 'Read active weather alerts issued for California.',
-    documentationUrl: 'https://www.weather.gov/documentation/services-web-api', endpoint: 'https://api.weather.gov/alerts/active?area=CA',
-    accent: '#2563eb', monogram: 'NW',
-  }),
-  fixedApi({
     id: 'postcodes-io', name: 'Postcodes.io', provider: 'Postcodes.io', category: 'Geo',
     description: 'Look up geographic and administrative details for a UK postcode.',
     documentationUrl: 'https://postcodes.io/docs', endpoint: 'https://api.postcodes.io/postcodes/SW1A1AA',
@@ -764,7 +749,7 @@ const importedRecommendedApis: ApiDemo[] = [
   },
   {
     id: 'openfda-drug-labels', name: 'openFDA Drug Labels', provider: 'U.S. Food and Drug Administration', category: 'Health',
-    description: 'Search public drug-label records by brand name and inspect regulated product metadata.',
+    description: 'Search public drug-label records by brand name and inspect product identity, active ingredients, indications, warnings, and directions.',
     documentationUrl: 'https://open.fda.gov/apis/drug/label/', accent: '#0369a1', monogram: 'FD', risk: 'Review',
     usageNote: 'For informational demonstrations only. Labels may be incomplete or outdated; never use this response for medical decisions.',
     fields: [{ id: 'brand', label: 'Brand name', type: 'text', defaultValue: 'Advil', help: 'Search a drug brand name indexed by openFDA.' }],
@@ -780,22 +765,6 @@ const importedRecommendedApis: ApiDemo[] = [
     usageNote: 'Market data is informational, not investment advice. Display CoinPaprika attribution when publishing results.',
     fields: [{ id: 'coin', label: 'Cryptocurrency', type: 'select', defaultValue: 'btc-bitcoin', help: 'Select a public ticker.', options: [{ label: 'Bitcoin', value: 'btc-bitcoin' }, { label: 'Ethereum', value: 'eth-ethereum' }, { label: 'Solana', value: 'sol-solana' }, { label: 'Tether', value: 'usdt-tether' }] }],
     buildUrl: ({ coin = 'btc-bitcoin' }) => `https://api.coinpaprika.com/v1/tickers/${encode(coin || 'btc-bitcoin')}`,
-  },
-  {
-    id: 'yahoo-finance-sgx-history', name: 'Yahoo Finance SGX History', provider: 'Yahoo Finance', category: 'Finance',
-    description: 'Explore maximum available history for 22 SGX blue-chip and large-cap listings, including D05 from 2000.',
-    documentationUrl: 'https://help.yahoo.com/kb/finance-for-web/download-historical-data-yahoo-finance-sln2311.html', accent: '#6f2dbd', monogram: 'YF', risk: 'Review',
-    usageNote: 'Yahoo does not publish this chart route as a supported public API and blocks browser CORS. This demo uses a read-only Jina Reader compatibility relay; do not use it for trading or production workloads.',
-    fields: [
-      { id: 'symbol', label: 'SGX symbol', type: 'select', defaultValue: 'D05', help: 'Choose one of 22 verified Yahoo Finance .SI listings.', options: yahooSgxSymbols },
-      { id: 'interval', label: 'History interval', type: 'select', defaultValue: '1mo', help: 'Monthly data is recommended for maximum history.', options: [{ label: 'Weekly', value: '1wk' }, { label: 'Monthly', value: '1mo' }, { label: 'Quarterly', value: '3mo' }] },
-    ],
-    buildUrl: ({ symbol = 'D05', interval = '1mo' }) => {
-      const safeSymbol = encode(symbol || 'D05').toUpperCase()
-      const safeInterval = ['1wk', '1mo', '3mo'].includes(interval) ? interval : '1mo'
-      return `https://r.jina.ai/http://query1.finance.yahoo.com/v8/finance/chart/${safeSymbol}.SI?range=max&interval=${safeInterval}&events=history&includeAdjustedClose=true`
-    },
-    parseResponse: parseReaderJson,
   },
   {
     id: 'malaysia-fuel-price', name: 'Malaysia Fuel Price', provider: 'data.gov.my', category: 'Finance',
@@ -1201,11 +1170,11 @@ const verifiedKeylessApis: ApiDemo[] = [
         longitude: { defaultValue: '103.8198', help: 'Use a valid WGS84 longitude from -180 to 180.' },
       }),
       { id: 'method', label: 'Calculation method', type: 'number', defaultValue: '11', min: 0, max: 99, help: 'Method 11 is used in the catalog for Singapore-compatible timing behavior.' },
-      { id: 'date', label: 'Date', type: 'text', defaultValue: today, help: 'Use YYYY-MM-DD, today, or tomorrow.' },
+      { id: 'date', label: 'Date', type: 'date', defaultValue: today, help: 'Use a Gregorian date in YYYY-MM-DD format. Public-API converts it to AlAdhan’s DD-MM-YYYY path format.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', method = '11', date = today }) => {
       const safeMethod = clampInt(method, 0, 99, 11)
-      return `https://api.aladhan.com/v1/timings/${encode((date || today).trim() || today)}?${new URLSearchParams({
+      return `https://api.aladhan.com/v1/timings/${toDmyDate(date || today)}?${new URLSearchParams({
         latitude: latitude.trim() || '1.3521',
         longitude: longitude.trim() || '103.8198',
         method: String(safeMethod),
@@ -1537,7 +1506,7 @@ const verifiedKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://www.geoboundaries.org/api.html', accent: '#0369a1', monogram: 'GBD',
     usageNote: 'Use downloaded geometry data for informational map views and attribution surfaces.',
     fields: [
-      { id: 'countryIso', label: 'Country ISO', type: 'text', defaultValue: 'SGP', min: 3, max: 3, help: 'Use a three-letter country code.' },
+      { id: 'countryIso', label: 'Country ISO', type: 'text', defaultValue: 'SGP', minLength: 3, maxLength: 3, help: 'Use a three-letter country code.' },
       { id: 'adminLevel', label: 'Admin level', type: 'select', defaultValue: 'ADM0', help: 'Choose the administrative level.',
         options: [{ label: 'ADM0', value: 'ADM0' }, { label: 'ADM1', value: 'ADM1' }, { label: 'ADM2', value: 'ADM2' }, { label: 'ADM3', value: 'ADM3' }] },
     ],
@@ -1546,7 +1515,7 @@ const verifiedKeylessApis: ApiDemo[] = [
   },
   {
     id: 'osrm-route', name: 'OSRM Route', provider: 'Project OSRM', category: 'Geo',
-    description: 'Calculate route distance, duration, and turn-by-turn geometry on public roads from start to destination.',
+    description: 'Calculate route distance, estimated duration, snapped endpoints, route geometry, and turn-by-turn steps on public roads from start to destination.',
     documentationUrl: 'https://github.com/Project-OSRM/osrm-backend', accent: '#0f766e', monogram: 'OSR',
     usageNote: 'Demonstration server is not production-grade; cache and throttle UI requests accordingly.',
     fields: [
@@ -1696,7 +1665,7 @@ const verifiedExpansionApis: ApiDemo[] = [
     id: 'rxnorm-drug-search', name: 'RxNorm Drug Search', provider: 'U.S. National Library of Medicine', category: 'Health', risk: 'Review',
     description: 'Look up standardized drug names, brand products, and dosage forms from the RxNorm terminology.',
     documentationUrl: 'https://lhncbc.nlm.nih.gov/RxNav/APIs/RxNormAPIs.html', accent: '#0369a1', monogram: 'RX',
-    usageNote: 'For terminology normalization demonstrations only. Never treat this response as medical or prescribing advice.',
+    usageNote: 'Data source: U.S. National Library of Medicine (NLM) RxNorm. For terminology normalization demonstrations only. Never treat this response as medical or prescribing advice.',
     fields: [{ id: 'name', label: 'Drug name', type: 'text', defaultValue: 'ibuprofen', placeholder: 'e.g. ibuprofen', help: 'Enter a generic or brand drug name.' }],
     buildUrl: ({ name = 'ibuprofen' }) => `https://rxnav.nlm.nih.gov/REST/drugs.json?${new URLSearchParams({ name: name.trim() || 'ibuprofen' }).toString()}`,
   },
@@ -1786,19 +1755,18 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
     id: 'celestrak-satellites', name: 'CelesTrak Satellite Tracker', provider: 'CelesTrak', category: 'Geo',
     description: 'Browse orbital elements for the ISS, Starlink, GPS, and other active satellite groups.',
     documentationUrl: 'https://celestrak.org/NORAD/documentation/gp-data-formats.php', accent: '#111827', monogram: 'SAT',
-    usageNote: 'CelesTrak refreshes group data roughly every two hours; avoid frequent automated polling.',
+    usageNote: 'CelesTrak GP data refreshes about every two hours. Automated verification must not poll more often than the update cadence and must stop immediately after any non-200 response.',
+    automatedVerification: {
+      mode: 'cadence-limited',
+      minimumIntervalSeconds: 7200,
+      retryOnNon2xx: false,
+      reason: 'CelesTrak asks machine clients to download GP data only once per update and to stop immediately after any non-200 response.',
+      policyUrl: 'https://celestrak.org/usage-policy.php',
+    },
     fields: [{ id: 'group', label: 'Satellite group', type: 'select', defaultValue: 'stations', help: 'Choose a tracked satellite group.', options: [
       { label: 'Space stations', value: 'stations' }, { label: 'Starlink', value: 'starlink' }, { label: 'GPS operational', value: 'gps-ops' }, { label: 'Active satellites', value: 'active' },
     ] }],
     buildUrl: ({ group = 'stations' }) => `https://celestrak.org/NORAD/elements/gp.php?${new URLSearchParams({ GROUP: group || 'stations', FORMAT: 'json' }).toString()}`,
-  },
-  {
-    id: 'musicbrainz-artist-search', name: 'MusicBrainz Artist Search', provider: 'MusicBrainz', category: 'Entertainment',
-    description: 'Search the MusicBrainz open music encyclopedia for artists, origin, type, and active years.',
-    documentationUrl: 'https://musicbrainz.org/doc/MusicBrainz_API', accent: '#ba478f', monogram: 'MB',
-    usageNote: 'Browsers cannot set a custom User-Agent header; keep request volume light and non-commercial per MusicBrainz terms.',
-    fields: [{ id: 'query', label: 'Artist search', type: 'text', defaultValue: 'queen', placeholder: 'e.g. queen', help: 'Search MusicBrainz artist names.' }],
-    buildUrl: ({ query = 'queen' }) => `https://musicbrainz.org/ws/2/artist/?${new URLSearchParams({ query: query.trim() || 'queen', fmt: 'json' }).toString()}`,
   },
   {
     id: 'cleveland-museum-search', name: 'Cleveland Museum Open Access', provider: 'The Cleveland Museum of Art', category: 'Media',
@@ -1885,12 +1853,13 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'noaa-tides', name: 'NOAA Tides & Currents', provider: 'NOAA Tides and Currents', category: 'Weather',
-    description: 'Read the latest observed water level from a United States coastal tide station.',
+    description: "Read NOAA CO-OPS' latest coastal water-level observation with station, datum, timestamp, and quality-control context.",
     documentationUrl: 'https://api.tidesandcurrents.noaa.gov/api/prod/', accent: '#0f6ba3', monogram: 'TIDE',
-    fields: [{ id: 'station', label: 'Tide station', type: 'select', defaultValue: '8518750', help: 'Choose a NOAA tide station.', options: [
+    usageNote: 'The demo requests NOAA CO-OPS water_level date=latest, which NOAA defines as the last available data point within 18 minutes. Values are metric relative to MLLW and timestamps use GMT; the provider may mark the latest value preliminary or verified.',
+    fields: [{ id: 'station', label: 'CO-OPS station', type: 'select', defaultValue: '8518750', help: 'Choose a NOAA coastal water-level station.', options: [
       { label: 'The Battery, NY', value: '8518750' }, { label: 'San Francisco, CA', value: '9414290' }, { label: 'Key West, FL', value: '8724580' },
     ] }],
-    buildUrl: ({ station = '8518750' }) => `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?${new URLSearchParams({ station: station || '8518750', product: 'water_level', date: 'latest', datum: 'MLLW', units: 'metric', time_zone: 'gmt', format: 'json' }).toString()}`,
+    buildUrl: ({ station = '8518750' }) => `https://api.tidesandcurrents.noaa.gov/api/prod/datagetter?${new URLSearchParams({ station: station || '8518750', product: 'water_level', date: 'latest', datum: 'MLLW', units: 'metric', time_zone: 'gmt', application: 'Public_API_Workbench', format: 'json' }).toString()}`,
   },
   {
     id: 'rdap-domain-lookup', name: 'RDAP Domain Lookup', provider: 'RDAP.org', category: 'Developer',
@@ -1904,6 +1873,11 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     description: 'Check English text for grammar, spelling, and style issues with rule-based suggestions.',
     documentationUrl: 'https://languagetool.org/http-api/', accent: '#39a845', monogram: 'LT',
     usageNote: 'For interactive, human-driven checks only. The free public endpoint prohibits automated requests; use a self-hosted or Enterprise instance for automation. Submitted text is sent to LanguageTool: do not send confidential text.',
+    agentExecution: {
+      mode: 'manual-only',
+      reason: 'LanguageTool’s free public endpoint prohibits automated requests. Use a self-hosted or Enterprise instance for automation.',
+      policyUrl: 'https://dev.languagetool.org/public-http-api.html',
+    },
     fields: [{ id: 'text', label: 'Text to check', type: 'text', defaultValue: 'This are a test.', placeholder: 'e.g. This are a test.', help: 'Enter a short English sentence to check.' }],
     method: 'POST', bodyEncoding: 'form',
     buildUrl: () => 'https://api.languagetool.org/v2/check',
@@ -1944,7 +1918,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'chembl-molecule', name: 'ChEMBL Molecule Profile', provider: 'ChEMBL', category: 'Health', risk: 'Review',
-    description: 'Inspect bioactivity-relevant molecule data including approval status, properties, and classifications.',
+    description: 'Inspect a ChEMBL molecule\'s development phase, calculated properties, structure identifiers, and classifications.',
     documentationUrl: 'https://www.ebi.ac.uk/chembl/api/data/docs', accent: '#6a1b9a', monogram: 'CHM',
     usageNote: 'For research and education demonstrations only. Not a substitute for clinical or regulatory drug information.',
     fields: [{ id: 'chemblId', label: 'ChEMBL ID', type: 'text', defaultValue: 'CHEMBL25', placeholder: 'e.g. CHEMBL25', help: 'Enter a ChEMBL molecule identifier (CHEMBL25 is aspirin).' }],
@@ -1966,9 +1940,9 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'ensembl-gene-lookup', name: 'Ensembl Gene Lookup', provider: 'Ensembl', category: 'Research',
-    description: 'Look up a human gene\'s genomic location, biotype, and description by Ensembl identifier.',
+    description: 'Inspect an Ensembl gene\'s stable identity, species, genome assembly location, strand, biotype, description, and canonical transcript when supplied.',
     documentationUrl: 'https://rest.ensembl.org/documentation/info/lookup', accent: '#7a1fa2', monogram: 'ENS',
-    fields: [{ id: 'geneId', label: 'Ensembl gene ID', type: 'text', defaultValue: 'ENSG00000157764', placeholder: 'e.g. ENSG00000157764', help: 'Enter an Ensembl gene identifier (default is BRAF).' }],
+    fields: [{ id: 'geneId', label: 'Ensembl gene ID', type: 'text', defaultValue: 'ENSG00000157764', placeholder: 'e.g. ENSG00000157764', help: 'Enter an Ensembl stable gene identifier (default is human BRAF).' }],
     buildUrl: ({ geneId = 'ENSG00000157764' }) => `https://rest.ensembl.org/lookup/id/${encode(geneId || 'ENSG00000157764')}?${new URLSearchParams({ 'content-type': 'application/json' }).toString()}`,
   },
   {
@@ -2005,13 +1979,6 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     usageNote: 'This legacy USGS water service is scheduled for retirement in early 2027; migrate to the newer Water Data APIs when available.',
     fields: [{ id: 'site', label: 'Monitoring site', type: 'text', defaultValue: '01646500', placeholder: 'e.g. 01646500', help: 'Enter a USGS site number (default is the Potomac River near Washington, D.C.).' }],
     buildUrl: ({ site = '01646500' }) => `https://waterservices.usgs.gov/nwis/iv/?${new URLSearchParams({ sites: site.trim() || '01646500', format: 'json', siteStatus: 'all' }).toString()}`,
-  },
-  {
-    id: 'crates-io-search', name: 'crates.io Package Lookup', provider: 'crates.io', category: 'Developer',
-    description: 'Inspect a Rust crate\'s latest version, downloads, license, and repository links.',
-    documentationUrl: 'https://crates.io/data-access', accent: '#f74c00', monogram: 'RS',
-    fields: [{ id: 'crateName', label: 'Crate name', type: 'text', defaultValue: 'serde', placeholder: 'e.g. serde', help: 'Enter a published crates.io package name.' }],
-    buildUrl: ({ crateName = 'serde' }) => `https://crates.io/api/v1/crates/${encode(crateName || 'serde')}`,
   },
   {
     id: 'rubygems-lookup', name: 'RubyGems Package Lookup', provider: 'RubyGems.org', category: 'Developer',
@@ -2064,13 +2031,6 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     buildUrl: ({ operation = 'simplify', expression = '2x+2x' }) => `https://newton.now.sh/api/v2/${encode(operation || 'simplify')}/${encode(expression || '2x+2x')}`,
   },
   {
-    id: 'gutendex-books', name: 'Gutendex Book Search', provider: 'Gutendex (Project Gutenberg)', category: 'Books',
-    description: 'Search public-domain books with authors, subjects, languages, and download formats.',
-    documentationUrl: 'https://gutendex.com/', accent: '#5a3e2b', monogram: 'PG',
-    fields: [{ id: 'search', label: 'Book search', type: 'text', defaultValue: 'shakespeare', placeholder: 'e.g. shakespeare', help: 'Search public-domain book titles and authors.' }],
-    buildUrl: ({ search = 'shakespeare' }) => `https://gutendex.com/books?${new URLSearchParams({ search: search.trim() || 'shakespeare' }).toString()}`,
-  },
-  {
     id: 'datamuse-rhymes', name: 'Datamuse Word Finder', provider: 'Datamuse', category: 'Language',
     description: 'Find rhymes, related words, and spelling suggestions using the Datamuse word-relations engine.',
     documentationUrl: 'https://www.datamuse.com/api/', accent: '#be185d', monogram: 'DTM',
@@ -2117,7 +2077,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     name: 'GLEIF LEI Explorer',
     provider: 'GLEIF',
     category: 'Finance',
-    description: 'Search official legal entities by name and review LEI status, headquarters, and parent/child relations.',
+    description: 'Search official legal entities by name and review LEI status, headquarters, registration state, and available corporate relationship links.',
     documentationUrl: 'https://www.gleif.org/en/lei-data/access-and-use-lei-data',
     accent: '#0f7c90',
     monogram: 'GLE',
@@ -2138,7 +2098,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     name: 'FDIC BankFind Suite',
     provider: 'FDIC',
     category: 'Finance',
-    description: 'Inspect U.S. bank records, including assets, deposit volume, operation status, and branch history.',
+    description: 'Search FDIC institution records by bank name and inspect operating status, headquarters, reported assets/deposits, office counts, and regulator metadata.',
     documentationUrl: 'https://api.fdic.gov/banks/docs',
     accent: '#0060a8',
     monogram: 'FDI',
@@ -2148,8 +2108,9 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     ],
     buildUrl: ({ bankName = 'Wells Fargo', count = '6' }) => {
       const safeCount = Math.min(20, Math.max(1, Number.parseInt(count, 10) || 6))
-      return `https://banks.data.fdic.gov/api/institutions?${new URLSearchParams({
-        q: bankName.trim() || 'Wells Fargo',
+      const safeBankName = (bankName.trim() || 'Wells Fargo').toUpperCase()
+      return `https://api.fdic.gov/banks/institutions?${new URLSearchParams({
+        search: `NAME: ${safeBankName}`,
         limit: String(safeCount),
         format: 'json',
       }).toString()}`
@@ -2267,13 +2228,14 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'vatcomply',
-    name: 'VATComply API',
+    name: 'VATComply Exchange Rates',
     provider: 'VATComply',
     category: 'Finance',
-    description: 'Retrieve currency exchange rates, VAT-number checks, and IBAN validation helpers for lightweight compliance demos.',
+    description: 'Read daily currency exchange rates for a selected base currency and target symbols from VATComply’s /rates endpoint.',
     documentationUrl: 'https://api.vatcomply.com/docs',
     accent: '#7c3aed',
     monogram: 'VPC',
+    usageNote: 'This Public-API entry calls VATComply’s /rates endpoint only. VAT-number and IBAN validation are separate provider operations and are not part of this demo.',
     fields: [
       { id: 'base', label: 'Base currency', type: 'text', defaultValue: 'EUR', placeholder: 'e.g. EUR', help: 'Choose the base currency for conversion output.' },
       { id: 'symbols', label: 'Target currencies', type: 'text', defaultValue: 'USD,SGD,GBP', placeholder: 'e.g. USD,SGD,GBP', help: 'Comma-separate up to ten currency codes.' },
@@ -2285,7 +2247,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     name: 'mempool.space Bitcoin',
     provider: 'mempool.space',
     category: 'Finance',
-    description: 'Read Bitcoin mempool congestion, fee rates, and chain health signals from the public mempool service.',
+    description: 'Read mempool.space recommended Bitcoin transaction fee rates for fastest, half-hour, hour, economy, and minimum targets.',
     documentationUrl: 'https://mempool.space/docs/api/rest',
     accent: '#f59e0b',
     monogram: 'MPB',
@@ -2458,19 +2420,41 @@ const publicApi200MilestoneApis: ApiDemo[] = [
   },
   {
     id: 'dblp-search', name: 'DBLP Publication Search', provider: 'DBLP', category: 'Research',
-    description: 'Search computer-science publications with authors, venues, years, and persistent bibliography links.',
-    documentationUrl: 'https://dblp.org/faq/How+to+use+the+dblp+search+API.html', accent: '#1f6f8b', monogram: 'DBL',
+    description: 'Search computer-science publication titles and inspect authors, venues, years, DOI, and persistent DBLP record URLs.',
+    documentationUrl: 'https://blog.dblp.org/2024/09/09/introducing-our-public-sparql-query-service/', accent: '#1f6f8b', monogram: 'DBL',
+    usageNote: 'Uses DBLP’s official public SPARQL service, which is currently described by DBLP as public beta. Keep queries bounded and avoid aggressive scripting; DBLP asks API users not to overwhelm its live services.',
     fields: [
-      queryField({ label: 'Publication search', defaultValue: 'large language models', placeholder: 'e.g. retrieval augmented generation', help: 'Search publication titles, authors, and venue metadata.' }),
-      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 publication hits.' }),
+      queryField({ label: 'Publication title search', defaultValue: 'large language models', placeholder: 'e.g. retrieval augmented generation', minLength: 1, maxLength: 120, help: 'Case-insensitive substring search over DBLP publication titles.' }),
+      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 matching publications.' }),
     ],
-    buildUrl: ({ query = 'large language models', limit = '6' }) => `https://dblp.org/search/publ/api?${new URLSearchParams({ q: query.trim() || 'large language models', h: String(clampInt(limit, 1, 20, 6)), format: 'json' }).toString()}`,
+    headers: { Accept: 'application/sparql-results+json' },
+    buildUrl: ({ query = 'large language models', limit = '6' }) => {
+      const queryText = query.trim() || 'large language models'
+      const safeLimit = clampInt(limit, 1, 20, 6)
+      const sparql = `PREFIX dblp: <https://dblp.org/rdf/schema#>
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+SELECT ?publ ?title ?year ?venue ?doi ?authorName WHERE {
+  {
+    SELECT ?publ ?title WHERE {
+      ?publ a dblp:Publication ; dblp:title ?title .
+      FILTER(CONTAINS(LCASE(STR(?title)), LCASE(${sparqlStringLiteral(queryText)})))
+    }
+    LIMIT ${safeLimit}
+  }
+  OPTIONAL { ?publ dblp:yearOfPublication ?year . }
+  OPTIONAL { ?publ dblp:publishedIn ?venue . }
+  OPTIONAL { ?publ dblp:doi ?doi . }
+  OPTIONAL { ?publ dblp:authoredBy ?author . ?author rdfs:label ?authorName . }
+}
+ORDER BY ?publ ?authorName`
+      return `https://sparql.dblp.org/sparql?${new URLSearchParams({ query: sparql }).toString()}`
+    },
   },
   {
     id: 'citybikes-network', name: 'CityBikes Live Stations', provider: 'CityBikes', category: 'Geo',
     description: 'Inspect live bike-sharing stations, available bicycles, empty docks, and coordinates for a selected city network.',
     documentationUrl: 'https://api.citybik.es/v2/', accent: '#16a34a', monogram: 'CBK',
-    usageNote: 'CityBikes documents a 300 requests/hour limit. Cache repeated network reads and avoid aggressive polling.',
+    usageNote: 'CityBikes limits the public API to 300 requests/hour and requires a clear CityBikes source link in projects using the API. Cache repeated network reads and avoid aggressive polling.',
     fields: [{ id: 'network', label: 'Bike network', type: 'select', defaultValue: 'youbike-taipei', help: 'Choose a public bike-sharing network.', options: [
       { label: 'Taipei · YouBike', value: 'youbike-taipei' }, { label: 'Paris · Vélib', value: 'velib' }, { label: 'London · Santander Cycles', value: 'santander-cycles' }, { label: 'New York · Citi Bike', value: 'citi-bike-nyc' }, { label: 'Barcelona · Bicing', value: 'bicing' },
     ] }],
@@ -2492,7 +2476,12 @@ const publicApi200MilestoneApis: ApiDemo[] = [
     id: 'nominatim-search', name: 'OpenStreetMap Nominatim', provider: 'OpenStreetMap', category: 'Geo',
     description: 'Geocode places and addresses into OpenStreetMap coordinates and structured address metadata.',
     documentationUrl: 'https://nominatim.org/release-docs/latest/api/Search/', accent: '#7ebc6f', monogram: 'NOM',
-    usageNote: 'The public Nominatim service requires OpenStreetMap attribution, identifiable browser requests, and no more than one request per second. Do not use it for autocomplete or bulk geocoding.',
+    usageNote: 'The public Nominatim service requires OpenStreetMap attribution, identifiable browser requests, and no more than one request per second. Do not use it for autocomplete or bulk geocoding. Its LLM/platform policy requires deliberate developer adoption rather than generic platform integration.',
+    agentExecution: {
+      mode: 'manual-only',
+      reason: 'Public Nominatim allows deliberate end-user-triggered use under strict limits, but its LLM/platform policy forbids generic platform integration. Structured agent execution is disabled here; use the interactive Request Lab only after reviewing the policy.',
+      policyUrl: 'https://operations.osmfoundation.org/policies/nominatim/',
+    },
     fields: [
       queryField({ label: 'Place or address', defaultValue: 'Singapore', placeholder: 'e.g. Marina Bay Singapore', help: 'Enter a place, landmark, postal address, or locality.' }),
       limitField({ label: 'Results', defaultValue: '5', min: 1, max: 10, help: 'Return between 1 and 10 geocoding matches.' }),
@@ -2595,6 +2584,12 @@ export const apiCatalog: ApiDemo[] = [
   ...publicApi200MilestoneApis,
 ]
 
+export const getAgentExecutionPolicy = (api: ApiDemo): AgentExecutionPolicy =>
+  api.agentExecution ?? { mode: 'enabled' }
+
+export const getAutomatedVerificationPolicy = (api: ApiDemo): AutomatedVerificationPolicy =>
+  api.automatedVerification ?? { mode: 'enabled' }
+
 export const getDefaultParameters = (api: ApiDemo): Record<string, string> =>
   Object.fromEntries(api.fields.map((field) => [field.id, field.defaultValue]))
 
@@ -2623,6 +2618,16 @@ export const validateParameters = (
       } else if (field.max !== undefined && numericValue > field.max) {
         errors[field.id] = `${field.label} must be at most ${field.max}.`
       }
+    } else if (field.type === 'text') {
+      if (field.minLength !== undefined && value.length < field.minLength) {
+        errors[field.id] = `${field.label} must be at least ${field.minLength} characters.`
+      } else if (field.maxLength !== undefined && value.length > field.maxLength) {
+        errors[field.id] = `${field.label} must be at most ${field.maxLength} characters.`
+      }
+    } else if (field.type === 'date' && !isIsoCalendarDate(value)) {
+      errors[field.id] = `${field.label} must be a valid date in YYYY-MM-DD format.`
+    } else if (field.options?.length && !field.options.some((option) => option.value === value)) {
+      errors[field.id] = `${field.label} must be one of the supported options.`
     }
   }
 

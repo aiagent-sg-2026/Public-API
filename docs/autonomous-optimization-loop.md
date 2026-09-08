@@ -70,8 +70,11 @@ Do not admit an API merely because it is free or keyless. Confirm:
 - expected content is parseable;
 - browser CORS permits the production GitHub Pages origin or `*`;
 - rate limits and usage constraints are understood;
+- the provider's current automation/platform policy is checked: explicit automation or generic-platform restrictions become SSOT execution policy with an official policy link, while rate limits/attribution alone do not imply `manual-only`;
+- autonomous verification never sends live requests to an endpoint classified `manual-only`; use deterministic synthetic UI/policy fixtures plus a zero-provider-request fail-closed check instead;
+- provider-specific verification cadence/backoff is enforced from the catalog SSOT: a cadence-limited endpoint is excluded from generic recurring health sweeps, and a provider that requires M2M clients to stop after non-200 responses must not receive same-run retry probes;
 - attribution/licensing/data-quality caveats are recorded where needed;
-- direct frontend use is appropriate;
+- direct frontend use is appropriate, including any mandatory provider identification/header contract that a normal browser must be able to satisfy without privileged header control;
 - a semantic SSOT card and browser E2E contract can be defined.
 
 ## Human and AI-agent quality gate
@@ -95,6 +98,7 @@ Every meaningful UI change should be reviewed for both user classes.
 - stable DOM metadata where useful;
 - no dependency on screenshot interpretation or full-text highlighting;
 - semantic text for information that is also visualized.
+- the generated machine catalog remains discoverable from ordinary HTML and aligned with catalog/WebMCP execution policy; no separate hand-maintained machine registry or fabricated live-health metadata.
 
 ## Testing policy
 
@@ -108,8 +112,18 @@ contract/unit tests
 ```
 
 Do not call a provider healthy based only on server-side `curl`. Browser-origin behavior is the admission criterion for this static GitHub Pages product.
+For search/filter demos, HTTP success alone is also insufficient: verify that the documented provider parameter is actually recognized and that the returned result semantics match the requested input. Prefer provider-echoed request metadata when available; an ignored query parameter that still returns HTTP 200 is a request-definition regression, not a healthy search.
+For date-sensitive demos, also verify the provider's documented date format and compare the provider-echoed Gregorian/reporting date with the requested date when the response exposes it. HTTP 200 with a differently interpreted day or year is a request-definition regression, even if the returned measurements look plausible.
+
+For WebMCP behavior, prefer native `document.modelContext` browser verification when the test browser exposes the WebMCP testing surface. Unit-level registration mocks remain useful, but they cannot prove imperative tool lifecycle behavior. In framework integrations, a normal UI state change must not abort and re-register the tool set while an invocation is in flight.
 
 Separate transient provider instability from product regression through controlled retries and direct/browser evidence. Never hide a genuine failure just to report 200/200.
+Exhausting the bounded retry window means the provider is **unresolved in this run**, not proven persistently down. Preserve the first-pass and retry evidence, then use a later independent fresh-browser confirmation before changing browser-admission status or describing durable provider drift.
+When Chromium exposes `Network.loadingFailed` diagnostics, the maintenance sweep may record bounded `blockedReason` / `corsErrorStatus` evidence to refine a JavaScript `network-or-cors` failure for investigation. Keep this as test-only evidence: missing CORS metadata is not proof that CORS was not involved, and the product runtime must not invent a more specific cause than the browser exposes.
+
+For large catalog-wide browser audits, bounded sharding is allowed when one long runner is unreliable. Every shard must derive from the same verification-eligible SSOT set and the same Pages-base bundle. Aggregate results only after proving exact coverage with no missing, duplicate, or extra API IDs; preserve each shard's first-pass and retry evidence independently. A shard that fails before provider requests (for example a wrong-base build preflight) does not count as provider-health evidence and must be rerun after repairing the harness state.
+
+For large UI collections, prefer measured bounded rendering over speculative optimization. Compare production-like browser DOM/control/node cost before and after the candidate, preserve global SSOT search/discovery semantics, and verify pagination or windowing with exact ID coverage rather than assuming off-screen items remain reachable.
 
 ## KB-MCP learning policy
 

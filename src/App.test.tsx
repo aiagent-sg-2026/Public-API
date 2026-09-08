@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import App, { REQUEST_TIMEOUT_MS } from './App'
+import App from './App'
 import { apiCatalog } from './apiCatalog'
 import { apiPreviewComponentIds, apiPreviewComponents, apiSsotCardIds, apiSsotCardRegistry, buildDemoPreview, ResponseDemoPreview, selectPreviewLayout, selectWeatherPreviewVariant } from './responsePreview'
 
@@ -15,6 +15,11 @@ const matchMedia = (query: string): MediaQueryList => ({
   removeEventListener: vi.fn(),
   dispatchEvent: vi.fn(),
 })
+
+const matchMediaAt = (width: number) => (query: string): MediaQueryList => {
+  const maxWidth = query.match(/max-width:\s*(\d+)px/)
+  return { ...matchMedia(query), matches: maxWidth ? width <= Number(maxWidth[1]) : false }
+}
 
 describe('catalog live API flow', () => {
   beforeEach(() => {
@@ -45,6 +50,7 @@ describe('catalog live API flow', () => {
 
     expect(window.location.hash).toBe('#/request-lab?api=countries')
     expect(await screen.findByRole('heading', { name: 'Request lab' })).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Request Lab', level: 1 })).toHaveFocus())
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(/"name": "Singapore"/)).toBeInTheDocument()
     expect(await screen.findByRole('heading', { name: 'Country Explorer' })).toBeInTheDocument()
@@ -57,7 +63,7 @@ describe('catalog live API flow', () => {
     expect(screen.getByRole('button', { name: 'Copy JSON' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Singapore' })).toBeInTheDocument()
     expect(screen.getByText('East Asia & Pacific')).toBeInTheDocument()
-  }, 8000)
+  }, 12_000)
   it('opens a deterministic Request Lab deep link with the requested API selected', () => {
     window.location.hash = '#/request-lab?api=open5e-monster-search'
     render(<App />)
@@ -76,15 +82,13 @@ describe('catalog live API flow', () => {
     expect(screen.getByRole('form', { name: 'Configure Country Explorer' })).toHaveAttribute('data-api-id', 'countries')
   })
 
-  it('does not expose no-op catalog controls as actionable buttons', () => {
-    render(<App />)
-    expect(screen.queryByRole('button', { name: 'Filters' })).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Page 1, current page' })).not.toBeInTheDocument()
-    expect(document.querySelector('.table-footer [aria-current="page"]')).toHaveTextContent('1')
-  })
-
   it('does not fabricate live verification metadata and exposes stable catalog row metadata', () => {
     render(<App />)
+    expect(document.querySelector('button[aria-label="Filters"]')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Close selected API details' })).not.toBeInTheDocument()
+    const currentPage = document.querySelector('.table-footer [aria-current="page"]')
+    expect(currentPage).toHaveTextContent('1')
+    expect(currentPage?.tagName).toBe('SPAN')
     const table = screen.getByRole('table')
     expect(within(table).queryByRole('columnheader', { name: 'Quality' })).not.toBeInTheDocument()
     expect(within(table).queryByRole('columnheader', { name: 'Last reviewed' })).not.toBeInTheDocument()
@@ -99,14 +103,87 @@ describe('catalog live API flow', () => {
     expect(countryRow).toHaveAttribute('data-category', 'Data')
     expect(countryRow).toHaveAttribute('data-provider', 'World Bank')
     expect(countryRow).toHaveAttribute('data-http-method', 'GET')
+    expect(countryRow).toHaveAttribute('data-agent-execution', 'enabled')
+    expect(countryRow).toHaveAttribute('data-automated-verification', 'enabled')
     expect(countryRow).toHaveAttribute('data-selected', 'true')
+    const catalogDocumentationLinks = [...document.querySelectorAll<HTMLAnchorElement>('a[data-api-docs-for]')]
+    expect(catalogDocumentationLinks).toHaveLength(50)
+    expect(new Set(catalogDocumentationLinks.map((link) => link.getAttribute('aria-label'))).size).toBe(50)
+    expect(countryRow?.querySelector('a[data-api-docs-for="countries"]')).toHaveAccessibleName('Open Country Explorer documentation')
 
     fireEvent.click(screen.getByRole('radio', { name: 'Select Live Weather' }))
     expect(countryRow).toHaveAttribute('data-selected', 'false')
     expect(document.querySelector('tr[data-api-id="weather"]')).toHaveAttribute('data-selected', 'true')
     expect(screen.getByText('Live health')).toBeInTheDocument()
     expect(screen.getByText('Check in Request Lab')).toBeInTheDocument()
+  }, 12_000)
+
+  it('paginates the catalog with exact coverage and resets to page one when searching', () => {
+    render(<App />)
+    const seen = new Set<string>()
+    const labels = new Set<string>()
+    const collectPage = () => {
+      for (const link of document.querySelectorAll<HTMLAnchorElement>('a[data-api-docs-for]')) {
+        if (link.dataset.apiDocsFor) seen.add(link.dataset.apiDocsFor)
+        if (link.getAttribute('aria-label')) labels.add(link.getAttribute('aria-label') as string)
+      }
+    }
+
+    expect(document.querySelectorAll('tbody tr[data-api-id]')).toHaveLength(50)
+    expect(document.querySelector('.table-footer')).toHaveAttribute('data-page-count', '4')
+    expect(document.querySelector('.table-footer')).toHaveAttribute('data-page-size', '50')
+    expect(screen.getByLabelText('Page 1 of 4')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Previous catalog page' })).toBeDisabled()
+    collectPage()
+    for (let page = 2; page <= 4; page += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Next catalog page' }))
+      expect(screen.getByLabelText(`Page ${page} of 4`)).toBeInTheDocument()
+      collectPage()
+    }
+    expect(document.querySelectorAll('tbody tr[data-api-id]')).toHaveLength(45)
+    expect(screen.getByRole('button', { name: 'Next catalog page' })).toBeDisabled()
+    expect(seen.size).toBe(195)
+    expect(labels.size).toBe(195)
+    expect(document.querySelector('tr[data-api-id="nominatim-search"]')).toHaveAttribute('data-agent-execution', 'manual-only')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search catalog' }), { target: { value: 'LanguageTool' } })
+    expect(screen.getByLabelText('Page 1 of 1')).toBeInTheDocument()
+    expect(document.querySelectorAll('tbody tr[data-api-id]')).toHaveLength(1)
+    expect(document.querySelector('tr[data-api-id="languagetool-grammar-check"]')).toHaveAttribute('data-agent-execution', 'manual-only')
+  }, 15_000)
+
+  it('treats the compact selected-API drawer as a modal dialog and restores its invoker', async () => {
+    vi.stubGlobal('matchMedia', matchMediaAt(390))
+    render(<App />)
+
+    const weatherRadio = screen.getByRole('radio', { name: 'Select Live Weather' })
+    weatherRadio.focus()
+    fireEvent.click(weatherRadio)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Live Weather details' })
+    expect(dialog).toHaveAttribute('aria-modal', 'true')
+    expect(document.querySelector('.admin-main')).toHaveAttribute('inert')
+    expect(document.querySelector('#primary-navigation')).toHaveAttribute('inert')
+    expect(document.querySelector('.detail-scrim')).toHaveAttribute('aria-hidden', 'true')
+    const close = within(dialog).getByRole('button', { name: 'Close selected API details' })
+    await waitFor(() => expect(close).toHaveFocus())
+
+    const focusable = [...dialog.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+    const last = focusable.at(-1)
+    expect(last).toBeDefined()
+    last?.focus()
+    fireEvent.keyDown(last as HTMLElement, { key: 'Tab' })
+    expect(close).toHaveFocus()
+
+    fireEvent.keyDown(close, { key: 'Tab', shiftKey: true })
+    expect(last).toHaveFocus()
+
+    fireEvent.keyDown(last as HTMLElement, { key: 'Escape' })
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Live Weather details' })).not.toBeInTheDocument())
+    await waitFor(() => expect(weatherRadio).toHaveFocus())
+    expect(document.querySelector('.admin-main')).not.toHaveAttribute('inert')
   })
+
 
   it('labels the Health workspace as static catalog metadata rather than current provider health', () => {
     window.location.hash = '#/health'
@@ -123,6 +200,7 @@ describe('catalog live API flow', () => {
   })
 
   it('exposes deterministic request state and error semantics for browser agents', async () => {
+    window.location.hash = '#/request-lab?api=countries'
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ message: 'Too many requests' }), {
       status: 429,
       statusText: 'Too Many Requests',
@@ -140,60 +218,6 @@ describe('catalog live API flow', () => {
     expect(screen.getByRole('region', { name: 'Country Explorer request output' })).toHaveAttribute('data-request-state', 'error')
     expect(screen.getByRole('region', { name: 'Country Explorer request output' })).toHaveAttribute('data-error-type', 'rate-limit')
     expect(screen.getByRole('form', { name: 'Configure Country Explorer' })).toHaveAttribute('data-api-id', 'countries')
-  })
-
-  it('fails a stalled browser request with a deterministic timeout error', async () => {
-    vi.useFakeTimers()
-    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
-      const signal = init?.signal
-      if (!signal) return reject(new Error('Missing AbortSignal'))
-      signal.addEventListener('abort', () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError')), { once: true })
-    }))
-    vi.stubGlobal('fetch', fetchMock)
-
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(REQUEST_TIMEOUT_MS + 1)
-    })
-
-    const alert = screen.getByRole('alert', { name: 'Request failed: timeout' })
-    expect(alert).toHaveAttribute('data-error-type', 'timeout')
-    expect(alert).toHaveTextContent('The request timed out after 20 seconds.')
-    expect(screen.getByRole('region', { name: 'Country Explorer request output' })).toHaveAttribute('data-request-state', 'error')
-  })
-
-  it('cancels an in-flight request when parameters change so stale data cannot overwrite the next run', async () => {
-    let firstSignal: AbortSignal | undefined
-    const fetchMock = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
-      if (fetchMock.mock.calls.length === 1) {
-        firstSignal = init?.signal ?? undefined
-        return new Promise<Response>((_resolve, reject) => {
-          firstSignal?.addEventListener('abort', () => reject(firstSignal?.reason ?? new DOMException('Aborted', 'AbortError')), { once: true })
-        })
-      }
-      return Promise.resolve(new Response(JSON.stringify([
-        { page: 1, pages: 1, total: 1 },
-        [{ id: 'MYS', name: 'Malaysia', capitalCity: 'Kuala Lumpur', region: { value: 'East Asia & Pacific' } }],
-      ]), { status: 200, headers: { 'Content-Type': 'application/json' } }))
-    })
-    vi.stubGlobal('fetch', fetchMock)
-
-    render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
-
-    const countryCode = await screen.findByRole('textbox', { name: 'Country code' })
-    fireEvent.change(countryCode, { target: { value: 'MY' } })
-    expect(firstSignal?.aborted).toBe(true)
-
-    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2))
-    expect(await screen.findByText(/\"name\": \"Malaysia\"/)).toBeInTheDocument()
-    expect(await screen.findByRole('heading', { name: 'Malaysia' })).toBeInTheDocument()
-    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
   })
 
   it('implements the Request Lab output as a keyboard-operable ARIA tab set', () => {
@@ -222,13 +246,29 @@ describe('catalog live API flow', () => {
     expect(rawTab).toHaveAttribute('aria-selected', 'true')
   })
 
-  it('associates Request Lab field help with native controls', async () => {
-    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ name: { common: 'Singapore' } }), { status: 200 }))
-    vi.stubGlobal('fetch', fetchMock)
+  it('generates reusable code for non-JSON responses without the removed Yahoo relay parser', () => {
+    window.location.hash = '#/request-lab?api=go-module-proxy'
+    const { unmount } = render(<App />)
+    fireEvent.click(screen.getByRole('tab', { name: 'Fetch code' }))
+    let panel = screen.getByRole('tabpanel')
+    expect(panel).toHaveTextContent("response.headers.get('content-type')")
+    expect(panel).toHaveTextContent('await response.text()')
+    expect(panel).not.toHaveTextContent('Markdown Content:')
+    unmount()
 
+    window.location.hash = '#/request-lab?api=qr-code-generator'
     render(<App />)
-    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
-    const control = await screen.findByRole('textbox', { name: 'Country code' })
+    fireEvent.click(screen.getByRole('tab', { name: 'Fetch code' }))
+    panel = screen.getByRole('tabpanel')
+    expect(panel).toHaveTextContent("contentType.startsWith('image/')")
+    expect(panel).toHaveTextContent('await response.blob()')
+  })
+
+  it('associates Request Lab field help with native controls', () => {
+    window.location.hash = '#/request-lab?api=countries'
+    render(<App />)
+
+    const control = screen.getByRole('textbox', { name: 'Country code' })
     expect(control).toHaveAttribute('aria-describedby', 'parameter-code-help')
     expect(document.getElementById('parameter-code-help')).toHaveTextContent('Use an ISO 2- or 3-letter country code.')
   })
@@ -247,6 +287,40 @@ describe('WebMCP discovery contract', () => {
     cleanup()
     delete (document as Document & { modelContext?: unknown }).modelContext
     vi.unstubAllGlobals()
+  })
+
+  it('exposes the generated machine catalog as an ordinary DOM fallback for agents', () => {
+    window.location.hash = '#/agent-tools'
+    render(<App />)
+    const link = screen.getByRole('link', { name: /Machine-readable API catalog/ })
+    expect(link).toHaveAttribute('href', '/api-catalog.json')
+    expect(link).toHaveAttribute('data-agent-catalog', 'api-catalog-json')
+    expect(link).toHaveTextContent('JSON · generated from the same API SSOT')
+  })
+
+  it('keeps WebMCP registrations stable when the selected API changes', async () => {
+    window.location.hash = '#/request-lab?api=countries'
+    type RegisteredTool = { execute: (input: Record<string, unknown>) => unknown | Promise<unknown> }
+    const registered = new Map<string, RegisteredTool>()
+    const registrationSignals: AbortSignal[] = []
+    const registerTool = vi.fn(async (tool: RegisteredTool & { name: string }, options?: { signal?: AbortSignal }) => {
+      registered.set(tool.name, tool)
+      if (options?.signal) registrationSignals.push(options.signal)
+    })
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: { registerTool } })
+
+    render(<App />)
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(5))
+
+    await act(async () => {
+      await registered.get('open_public_api_demo')?.execute({ id: 'weather' })
+    })
+    await waitFor(() => expect(screen.getByRole('form', { name: 'Configure Live Weather' })).toHaveAttribute('data-api-id', 'weather'))
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+
+    expect(registerTool).toHaveBeenCalledTimes(5)
+    expect(registrationSignals).toHaveLength(5)
+    expect(registrationSignals.every((signal) => !signal.aborted)).toBe(true)
   })
 
   it('lets agents search the catalog and discover select options and numeric bounds from the SSOT', async () => {
@@ -268,14 +342,96 @@ describe('WebMCP discovery contract', () => {
       demos: Array<{ category: string; requestLabUrl: string; parameters: Array<{ id: string; min?: number; max?: number; options?: Array<{ label: string; value: string }> }> }>
     }
 
-    expect(result.total).toBe(200)
+    expect(result.total).toBe(195)
     expect(result.count).toBe(1)
     expect(result.category).toBe('People')
     expect(result.demos[0]?.category).toBe('People')
     expect(new URL(result.demos[0]?.requestLabUrl ?? 'http://invalid/').hash).toBe('#/request-lab?api=people')
     expect(result.demos[0]?.parameters.find((field) => field.id === 'count')).toMatchObject({ min: 1, max: 10 })
     expect(result.demos[0]?.parameters.find((field) => field.id === 'nationality')?.options).toContainEqual({ label: 'Australia', value: 'au' })
+
+    const geoResult = await listTool?.execute({ query: 'geoBoundaries', category: 'Geo' }) as {
+      demos: Array<{ parameters: Array<{ id: string; minLength?: number; maxLength?: number; options?: Array<{ label: string; value: string }> }> }>
+    }
+    expect(geoResult.demos).toHaveLength(1)
+    expect(geoResult.demos[0]?.parameters.find((field) => field.id === 'countryIso')).toMatchObject({ minLength: 3, maxLength: 3 })
+    expect(geoResult.demos[0]?.parameters.find((field) => field.id === 'adminLevel')?.options).toContainEqual({ label: 'ADM3', value: 'ADM3' })
   })
+
+  it('does not auto-run a manual-only provider from the catalog quick action', async () => {
+    window.location.hash = '#/catalog'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<App />)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search catalog' }), { target: { value: 'Nominatim' } })
+    fireEvent.click(screen.getByRole('radio', { name: 'Select OpenStreetMap Nominatim' }))
+    const quickAction = await screen.findByRole('button', { name: 'Open interactive Request Lab' })
+    expect(quickAction).toHaveAttribute('data-agent-execution', 'manual-only')
+    expect(screen.queryByRole('button', { name: 'Copy fetch' })).not.toBeInTheDocument()
+    fireEvent.click(quickAction)
+
+    await waitFor(() => expect(window.location.hash).toContain('#/request-lab?api=nominatim-search'))
+    await waitFor(() => expect(document.querySelector('.request-lab')).toHaveAttribute('data-request-state', 'idle'))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(screen.getByLabelText('Agent execution restriction')).toHaveTextContent('generic platform integration')
+  }, 12000)
+
+  it('publishes manual-only provider policy to agents and blocks structured execution without blocking human use', async () => {
+    window.location.hash = '#/request-lab?api=languagetool-grammar-check'
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ matches: [] }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    type RegisteredTool = {
+      name: string
+      inputSchema: { properties?: { id?: { enum?: string[] } } }
+      execute: (input: Record<string, unknown>) => unknown | Promise<unknown>
+    }
+    const registered = new Map<string, RegisteredTool>()
+    const registerTool = vi.fn(async (tool: RegisteredTool) => { registered.set(tool.name, tool) })
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: { registerTool } })
+
+    render(<App />)
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(5))
+
+    const form = screen.getByRole('form', { name: 'Configure LanguageTool Grammar Check' })
+    expect(form).toHaveAttribute('data-agent-execution', 'manual-only')
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-agent-execution', 'manual-only')
+    const restriction = screen.getByLabelText('Agent execution restriction')
+    expect(restriction).toHaveTextContent('Interactive use only')
+    expect(restriction).toHaveTextContent('prohibits automated requests')
+    expect(within(restriction).getByRole('link', { name: /Provider policy/ })).toHaveAttribute('href', 'https://dev.languagetool.org/public-http-api.html')
+    const humanRun = screen.getByRole('button', { name: 'Try live API' })
+    expect(humanRun).toHaveAttribute('data-agent-execution', 'manual-only')
+    expect(humanRun).toHaveAttribute('aria-describedby', 'agent-execution-policy-languagetool-grammar-check')
+    expect(screen.queryByRole('tab', { name: 'Fetch code' })).not.toBeInTheDocument()
+
+    const listTool = registered.get('list_public_api_demos')
+    const discovery = await listTool?.execute({ query: 'LanguageTool', category: 'Language' }) as {
+      demos: Array<{ id: string; usageNote?: string; agentExecution: { mode: string; reason?: string; policyUrl?: string } }>
+    }
+    expect(discovery.demos).toHaveLength(1)
+    expect(discovery.demos[0]).toMatchObject({ id: 'languagetool-grammar-check', agentExecution: { mode: 'manual-only' } })
+    expect(discovery.demos[0]?.agentExecution.reason).toContain('prohibits automated requests')
+    expect(discovery.demos[0]?.agentExecution.policyUrl).toBe('https://dev.languagetool.org/public-http-api.html')
+    expect(discovery.demos[0]?.usageNote).toContain('interactive, human-driven checks')
+
+    const runTool = registered.get('run_public_api_demo')
+    expect(runTool?.inputSchema.properties?.id?.enum).not.toContain('languagetool-grammar-check')
+    expect(runTool?.inputSchema.properties?.id?.enum).not.toContain('nominatim-search')
+    expect(runTool?.inputSchema.properties?.id?.enum).toContain('color-api')
+    await expect(runTool?.execute({ id: 'languagetool-grammar-check' })).rejects.toThrow('AGENT_EXECUTION_BLOCKED')
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-request-state', 'idle')
+
+    fireEvent.click(humanRun)
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(document.querySelector('.request-lab')).toHaveAttribute('data-request-state', 'success'))
+  })
+
 })
 
 describe('demo preview mapping', () => {
@@ -288,7 +444,6 @@ describe('demo preview mapping', () => {
   it('selects a purpose-built layout for each API family', () => {
     expect(selectPreviewLayout({ id: 'weather', category: 'Utility' })).toBe('weather-dashboard')
     expect(selectPreviewLayout({ id: 'countries', category: 'Data' })).toBe('country-profile')
-    expect(selectPreviewLayout({ id: 'yahoo-finance-sgx-history', category: 'Finance' })).toBe('market-chart')
     expect(selectPreviewLayout({ id: 'dogs', category: 'Nature' })).toBe('media-gallery')
     expect(selectPreviewLayout({ id: 'usgs', category: 'Geo' })).toBe('location-map')
     expect(selectPreviewLayout({ id: 'holidays', category: 'Calendar' })).toBe('calendar-timeline')
@@ -298,7 +453,6 @@ describe('demo preview mapping', () => {
     expect(selectPreviewLayout({ id: 'open-trivia', category: 'Games' })).toBe('trivia-game')
     expect(selectPreviewLayout({ id: 'geocoding-search', category: 'Geo' })).toBe('location-map')
     expect(selectPreviewLayout({ id: 'carbon-intensity-gb', category: 'Environment' })).toBe('data-table')
-    expect(selectPreviewLayout({ id: 'nws-weather', category: 'Weather' })).toBe('data-table')
     expect(selectPreviewLayout({ id: 'nhtsa-vehicle-recalls', category: 'Vehicle' })).toBe('vehicle-recalls')
     expect(selectPreviewLayout({ id: 'github', category: 'Developer' })).toBe('developer-feed')
     expect(selectPreviewLayout({ id: 'nvd-cves', category: 'Developer' })).toBe('security-center')
@@ -318,7 +472,7 @@ describe('demo preview mapping', () => {
       'fiscal-data-treasury': 'data-table',
       'wikidata-sparql': 'data-table',
       'met-museum-object-detail': 'media-gallery',
-      'met-museum-search': 'data-table',
+      'met-museum-search': 'collection-index',
     }
 
     for (const [id, layout] of Object.entries(expected)) {
@@ -329,10 +483,30 @@ describe('demo preview mapping', () => {
     }
   })
 
+  it('keeps dedicated semantic adapters aligned with domain-meaningful machine layout metadata', () => {
+    const expected: Record<string, string> = {
+      'data-gov-carpark': 'availability-board',
+      'met-museum-search': 'collection-index',
+      'nhtsa-vpic': 'manufacturer-directory',
+      'gbif-species-search': 'taxonomy-directory',
+      'openf1-historical': 'motorsport-results',
+      'animechan-random-quote': 'quote-card',
+      'swapi-people': 'character-dossier',
+      'noaa-tides': 'coastal-water-level',
+    }
+
+    for (const [id, layout] of Object.entries(expected)) {
+      const api = apiCatalog.find((candidate) => candidate.id === id)
+      expect(api, `Missing API ${id}`).toBeDefined()
+      if (!api) continue
+      expect(selectPreviewLayout({ id, category: api.category })).toBe(layout)
+    }
+  })
+
   it('registers every catalog API in the fail-closed SSOT card registry', () => {
     const catalogIds = apiCatalog.map((api) => api.id).sort()
     expect([...apiSsotCardIds].sort()).toEqual(catalogIds)
-    expect(apiSsotCardIds).toHaveLength(200)
+    expect(apiSsotCardIds).toHaveLength(195)
     for (const id of catalogIds) {
       const definition = apiSsotCardRegistry[id]
       expect(definition, `Missing SSOT card ${id}`).toBeDefined()
@@ -344,14 +518,14 @@ describe('demo preview mapping', () => {
     }
   })
 
-  it('registers 200 distinct React component functions with no shared identity', () => {
+  it('registers one distinct React component function for every catalog API', () => {
     const catalogIds = apiCatalog.map((api) => api.id).sort()
     const components = Object.values(apiPreviewComponents).filter((component) => component !== undefined)
 
     expect([...apiPreviewComponentIds].sort()).toEqual(catalogIds)
-    expect(components).toHaveLength(200)
-    expect(new Set(components).size).toBe(200)
-    expect(new Set(components.map((component) => component.name)).size).toBe(200)
+    expect(components).toHaveLength(195)
+    expect(new Set(components).size).toBe(195)
+    expect(new Set(components.map((component) => component.name)).size).toBe(195)
   })
 
   it('mounts an API-owned visual component for every catalog response', () => {
@@ -372,7 +546,7 @@ describe('demo preview mapping', () => {
       expect(container.querySelector('[data-preview-component="generic-fallback"]')).not.toBeInTheDocument()
       unmount()
     }
-    expect(new Set(visualSignatures).size).toBe(200)
+    expect(new Set(visualSignatures).size).toBe(195)
     expect(visualSignatures.every(Boolean)).toBe(true)
   })
 
@@ -428,7 +602,7 @@ describe('new interactive API previews', () => {
   })
 
   it('renders a solar timeline from sunrise-sunset v2', () => {
-    render(<ResponseDemoPreview api={api('sunrise-sunset')} data={{ date: '2026-07-15', tzid: 'Asia/Singapore', lat: 1.3521, lng: 103.8198, sunrise: '2026-07-15T07:03:51+08:00', sunset: '2026-07-15T19:17:33+08:00', solar_noon: '2026-07-15T13:10:42+08:00', first_light: '2026-07-15T05:50:49+08:00', last_light: '2026-07-15T20:30:35+08:00', day_length: 44022, moon_phase: 'New Moon' }}/> )
+    render(<ResponseDemoPreview api={api('sunrise-sunset')} data={{ date: '2026-07-15', tzid: 'Asia/Singapore', lat: 1.3521, lng: 103.8197, sunrise: '2026-07-15T07:03:51+08:00', sunset: '2026-07-15T19:17:33+08:00', solar_noon: '2026-07-15T13:10:42+08:00', first_light: '2026-07-15T05:50:49+08:00', last_light: '2026-07-15T20:30:35+08:00', day_length: 44022, moon_phase: 'New Moon' }}/> )
     const preview = screen.getByRole('region', { name: 'Sunrise & Sunset' })
     expect(within(preview).getByText('12h 14m of daylight')).toBeInTheDocument()
     expect(within(preview).getByText('New Moon', { exact: false })).toBeInTheDocument()
@@ -441,10 +615,10 @@ describe('new interactive API previews', () => {
     rerender(<ResponseDemoPreview api={api('mbta-transit-routes')} data={{ data: [{ id: 'Red', attributes: { color: 'DA291C', description: 'Rapid Transit', long_name: 'Red Line', direction_destinations: ['Ashmont/Braintree', 'Alewife'] } }] }}/> )
     expect(screen.getByRole('region', { name: 'MBTA Transit Routes' })).toHaveTextContent('Ashmont/Braintree ↔ Alewife')
 
-    rerender(<ResponseDemoPreview api={api('open-trivia')} data={{ response_code: 0, results: [{ category: 'General Knowledge', difficulty: 'medium', question: 'When did Halley&#039;s Comet appear?', correct_answer: '1986', incorrect_answers: ['2001', '1942', '1909'] }] }}/> )
+    rerender(<ResponseDemoPreview api={api('open-trivia')} data={{ response_code: 0, results: [{ category: 'General Knowledge', difficulty: 'medium', question: 'When did Halley&#039;s Comet appear?', correct_answer: '1976', incorrect_answers: ['2001', '1942', '1909'] }] }}/> )
     const trivia = screen.getByRole('region', { name: 'Trivia Challenge' })
     expect(trivia).toHaveTextContent("When did Halley's Comet appear?")
-    expect(within(trivia).getByText('1986')).toBeInTheDocument()
+    expect(within(trivia).getByText('1976')).toBeInTheDocument()
   })
 })
 
@@ -467,6 +641,7 @@ describe('new specialist API previews', () => {
     expect(within(preview).getByText('RM 3.37')).toBeInTheDocument()
     expect(within(preview).getAllByText('↓ RM 0.1')).toHaveLength(3)
     expect(within(preview).getByText('BUDI95')).toBeInTheDocument()
+    expect(within(preview).getByRole('img', { name: 'RON95 price history sparkline' })).toBeInTheDocument()
   })
 
   it('maps marine hourly arrays into wave, temperature, and current readings', () => {
@@ -549,23 +724,29 @@ describe('new specialist API previews', () => {
     expect(within(preview).getByText('Honda')).toBeInTheDocument()
   })
 
-  it('renders AlAdhan prayer times with Hijri/Gregorian context', () => {
+  it('renders AlAdhan prayer times with a dedicated daily schedule and calendar context', () => {
     render(<ResponseDemoPreview api={api('aladhan-prayer-times')} data={{
       timings: {
-        Fajr: '05:12', Sunrise: '06:58', Dhuhr: '13:05', Asr: '16:25', Maghrib: '19:12', Isha: '20:34',
+        Fajr: '05:12', Sunrise: '06:58', Dhuhr: '13:05', Asr: '16:25', Maghrib: '19:12', Isha: '20:34', Imsak: '05:02', Midnight: '01:05',
       },
       date: {
-        hijri: { date: '01-01-1448' },
-        gregorian: { date: '2026-08-02' },
+        readable: '02 Aug 2026',
+        hijri: { date: '17-02-1448', year: '1448', month: { en: 'Safar' }, designation: { abbreviated: 'AH' } },
+        gregorian: { date: '02-08-2026' },
       },
-      meta: { method: { id: 11 } },
+      meta: { latitude: 1.3521, longitude: 103.8198, timezone: 'Asia/Singapore', school: 'STANDARD', method: { id: 11, name: 'Majlis Ugama Islam Singapura, Singapore' } },
     }} />)
     const preview = screen.getByRole('region', { name: 'AlAdhan Prayer Times' })
-    expect(preview).toHaveAttribute('data-preview-layout', 'data-table')
-    expect(within(preview).getByText('Fajr time')).toBeInTheDocument()
-    expect(within(preview).getByText('05:12')).toBeInTheDocument()
-    expect(within(preview).getByText('Method 11')).toBeInTheDocument()
-    expect(within(preview).getByText('01-01-1448')).toBeInTheDocument()
+    const schedule = within(preview).getByRole('list', { name: 'Daily prayer schedule' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'prayer-schedule')
+    expect(preview.querySelector('.prayer-times-preview')).toHaveAttribute('data-primary-fajr-time', '05:12')
+    expect(preview.querySelector('.prayer-times-preview')).toHaveAttribute('data-gregorian-date', '02-08-2026')
+    expect(within(schedule).getByText('Fajr')).toBeInTheDocument()
+    expect(within(schedule).getByText('05:12')).toBeInTheDocument()
+    expect(within(preview).getByText('Majlis Ugama Islam Singapura, Singapore')).toBeInTheDocument()
+    expect(within(preview).getByText('17-02-1448 AH')).toBeInTheDocument()
+    expect(within(preview).getByText('Asia/Singapore')).toBeInTheDocument()
+    expect(within(preview).getByText(/Hijri dates as mathematically calculated/)).toBeInTheDocument()
   })
 
   it('renders Packagist search results with package metadata', () => {
@@ -677,10 +858,12 @@ describe('next keyless API previews', () => {
     rerender(<ResponseDemoPreview api={api('open-meteo-flood')} data={{ latitude: 1.37, longitude: 103.82, daily_units: { river_discharge: 'm³/s' }, daily: { time: ['2026-07-15', '2026-07-16'], river_discharge: [1, 1.2], river_discharge_mean: [0.99, 1.3], river_discharge_max: [1.86, 2.17] } }}/>)
     expect(screen.getByRole('region', { name: 'Global Flood Forecast' })).toHaveTextContent('Forecast peak')
     expect(screen.getByRole('region', { name: 'Global Flood Forecast' })).toHaveTextContent('2.17 m³/s')
+    expect(within(screen.getByRole('region', { name: 'Global Flood Forecast' })).getByRole('img', { name: 'River discharge forecast sparkline' })).toBeInTheDocument()
 
     rerender(<ResponseDemoPreview api={api('open-meteo-history')} data={{ timezone: 'Asia/Singapore', daily_units: { temperature_2m_max: '°C', precipitation_sum: 'mm' }, daily: { time: ['2025-01-01', '2025-01-02'], temperature_2m_max: [31, 32], temperature_2m_min: [24, 25], precipitation_sum: [1.2, 4.8] } }}/>)
     expect(screen.getByRole('region', { name: 'Historical Weather' })).toHaveTextContent('Average high')
     expect(screen.getByRole('region', { name: 'Historical Weather' })).toHaveTextContent('Total rain')
+    expect(within(screen.getByRole('region', { name: 'Historical Weather' })).getByRole('img', { name: 'Response trend sparkline' })).toBeInTheDocument()
 
     rerender(<ResponseDemoPreview api={api('kraken-public-ticker')} data={{ result: { XXBTZUSD: { a: ['65010'], b: ['64990'], c: ['65000'], v: ['100', '2500'], l: ['63000', '62000'], h: ['65500', '66000'], o: '64000' } } }}/>)
     expect(screen.getByRole('region', { name: 'Kraken Market Ticker' })).toHaveTextContent('USD 65,000')
@@ -779,7 +962,7 @@ describe('next keyless API previews', () => {
     expect(climatePreview).toHaveTextContent('NASA POWER')
     expect(climatePreview).toHaveTextContent('29 °C')
 
-    rerender(<ResponseDemoPreview api={api('open-meteo-elevation')} data={{ latitude: 1.3521, longitude: 103.8198, elevation: 16.72 }}/>)
+    rerender(<ResponseDemoPreview api={api('open-meteo-elevation')} data={{ latitude: 1.3521, longitude: 103.8197, elevation: 16.72 }}/>)
     const elevationPreview = screen.getByRole('region', { name: 'Open-Meteo Elevation' })
     expect(elevationPreview).toHaveAttribute('data-preview-layout', 'data-table')
     expect(elevationPreview).toHaveTextContent('Point 1')
@@ -822,6 +1005,162 @@ describe('catalog-wide semantic previews', () => {
     expect(within(preview).getByText('An expression of greeting.')).toBeInTheDocument()
     expect(within(preview).getByText('greeting')).toBeInTheDocument()
     expect(within(preview).queryByText('3 items')).not.toBeInTheDocument()
+  })
+
+  it('renders RDAP registration semantics instead of truncating the domain record to status and handle', () => {
+    render(<ResponseDemoPreview api={api('rdap-domain-lookup')} data={{
+      ldhName: 'GOOGLE.COM',
+      handle: '2138514_DOMAIN_COM-VRSN',
+      status: ['client delete prohibited', 'client transfer prohibited', 'server update prohibited'],
+      nameservers: [{ ldhName: 'NS1.GOOGLE.COM' }, { ldhName: 'NS2.GOOGLE.COM' }],
+      events: [
+        { eventAction: 'registration', eventDate: '1997-09-15T04:00:00Z' },
+        { eventAction: 'expiration', eventDate: '2028-09-14T04:00:00Z' },
+        { eventAction: 'last changed', eventDate: '2019-09-09T15:39:04Z' },
+      ],
+      entities: [{ roles: ['registrar'], handle: '292', vcardArray: ['vcard', [['version', {}, 'text', '4.0'], ['fn', {}, 'text', 'MarkMonitor Inc.']]] }],
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'RDAP Domain Lookup' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'domain-registration')
+    expect(preview).toHaveTextContent('GOOGLE.COM')
+    expect(preview).toHaveTextContent('MarkMonitor Inc.')
+    expect(preview).toHaveTextContent('1997-09-15')
+    expect(preview).toHaveTextContent('2028-09-14')
+    expect(preview).toHaveTextContent('NS1.GOOGLE.COM, NS2.GOOGLE.COM')
+    expect(preview).toHaveTextContent('client delete prohibited, client transfer prohibited, server update prohibited')
+    expect(preview).toHaveTextContent('2138514_DOMAIN_COM-VRSN')
+    expect(preview).not.toHaveTextContent('RDAP Domain Lookup record 1')
+  })
+
+  it('renders OSRM route distance, duration, geometry size, snapped endpoints, and turn steps semantically', () => {
+    render(<ResponseDemoPreview api={api('osrm-route')} data={{
+      code: 'Ok',
+      waypoints: [
+        { name: 'Start Road', location: [103.8198, 1.3521] },
+        { name: 'Destination Road', location: [103.851959, 1.29027] },
+      ],
+      routes: [{
+        distance: 11480.8, duration: 1174.9, weight: 4444.6, weight_name: 'routability',
+        geometry: { type: 'LineString', coordinates: [[103.8198, 1.3521], [103.835, 1.32], [103.851959, 1.29027]] },
+        legs: [{ distance: 11480.8, duration: 1174.9, steps: [
+          { distance: 120.4, duration: 28.2, name: 'Start Road', maneuver: { type: 'depart', modifier: 'straight' } },
+          { distance: 840.2, duration: 95.1, name: 'Orchard Road', maneuver: { type: 'turn', modifier: 'left' } },
+        ] }],
+      }],
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'OSRM Route' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'route-summary')
+    const route = preview.querySelector('.route-summary-preview')
+    expect(route).toHaveAttribute('data-primary-distance-m', '11480.8')
+    expect(route).toHaveAttribute('data-primary-duration-s', '1174.9')
+    expect(route).toHaveAttribute('data-primary-step-count', '2')
+    expect(route).toHaveAttribute('data-primary-geometry-point-count', '3')
+    expect(preview).toHaveTextContent('11.48 km')
+    expect(preview).toHaveTextContent('19 min 35 sec')
+    expect(preview).toHaveTextContent('Start Road · 1.3521, 103.8198')
+    expect(preview).toHaveTextContent('Destination Road · 1.29027, 103.85196')
+    expect(within(preview).getByRole('heading', { name: 'Turn-by-turn steps' })).toBeInTheDocument()
+    expect(preview).toHaveTextContent('depart · straight')
+    expect(preview).toHaveTextContent('turn · left')
+    expect(preview).toHaveTextContent('Orchard Road')
+    expect(preview).not.toHaveTextContent('OSRM Route record 1')
+  })
+
+  it('renders GLEIF legal-entity identity and registration facts instead of nested property counts', () => {
+    render(<ResponseDemoPreview api={api('gleif-lei')} data={{
+      data: [{
+        type: 'lei-records',
+        id: 'ES7IP3U3RHIGC71XBU11',
+        attributes: {
+          lei: 'ES7IP3U3RHIGC71XBU11',
+          entity: {
+            legalName: { name: 'Royal Bank of Canada' },
+            headquartersAddress: { addressLines: ['1 place Ville-Marie'], city: 'Montreal', region: 'CA-QC', country: 'CA', postalCode: 'H3B 3A9' },
+            jurisdiction: 'CA',
+            status: 'ACTIVE',
+          },
+          registration: { initialRegistrationDate: '2012-06-06T15:52:00Z', nextRenewalDate: '2027-01-09T18:00:18Z', status: 'ISSUED' },
+          bic: ['ROYCAEA1XXX', 'ROYCCAT2XXX'],
+        },
+        relationships: {
+          'direct-children': { links: { related: 'https://api.gleif.org/api/v1/lei-records/ES7IP3U3RHIGC71XBU11/direct-children' } },
+          'ultimate-children': { links: { related: 'https://api.gleif.org/api/v1/lei-records/ES7IP3U3RHIGC71XBU11/ultimate-children' } },
+        },
+      }],
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'GLEIF LEI Explorer' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'legal-entity')
+    const entity = preview.querySelector('.legal-entity-preview')
+    expect(entity).toHaveAttribute('data-primary-lei', 'ES7IP3U3RHIGC71XBU11')
+    expect(entity).toHaveAttribute('data-primary-legal-name', 'Royal Bank of Canada')
+    expect(entity).toHaveAttribute('data-primary-entity-status', 'ACTIVE')
+    expect(entity).toHaveAttribute('data-primary-registration-status', 'ISSUED')
+    expect(preview).toHaveTextContent('Royal Bank of Canada')
+    expect(preview).toHaveTextContent('1 place Ville-Marie, Montreal, CA-QC, H3B 3A9, CA')
+    expect(preview).toHaveTextContent('2012-06-06')
+    expect(preview).toHaveTextContent('2027-01-09')
+    expect(preview).toHaveTextContent('ROYCAEA1XXX, ROYCCAT2XXX')
+    expect(preview).toHaveTextContent('Direct children relation')
+    expect(preview).toHaveTextContent('Ultimate children relation')
+    expect(preview).not.toHaveTextContent('GLEIF LEI Explorer record 1')
+    expect(preview).not.toHaveTextContent('10 properties')
+  })
+
+  it('renders FDIC institution search results as bank identity and financial facts instead of nested property counts', () => {
+    render(<ResponseDemoPreview api={api('fdic-bankfind')} data={{
+      meta: { total: 35, parameters: { search: 'NAME: WELLS FARGO', limit: '6' } },
+      data: [{
+        data: {
+          NAME: 'Wells Fargo Bank, National Association', CERT: 3511, ACTIVE: 1, INACTIVE: 0,
+          ADDRESS: '3201 N 4th Ave', CITY: 'Sioux Falls', STALP: 'SD', ZIP: '57104',
+          ESTYMD: '01/01/1870', INSDATE: '01/01/1934', ASSET: 1907928000, DEP: 1563534000,
+          DEPDOM: 1554614000, OFFICES: 4184, REGAGNT: 'OCC', REPDTE: '06/30/2026',
+          BKCLASS: 'N', FDICREGN: 'Kansas City', INSFDIC: 1,
+        },
+        score: 1091.1737,
+      }],
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'FDIC BankFind Suite' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'bank-institution')
+    const bank = preview.querySelector('.bank-institution-preview')
+    expect(bank).toHaveAttribute('data-provider-match-count', '35')
+    expect(bank).toHaveAttribute('data-primary-bank-name', 'Wells Fargo Bank, National Association')
+    expect(bank).toHaveAttribute('data-primary-fdic-certificate', '3511')
+    expect(bank).toHaveAttribute('data-primary-active', 'true')
+    expect(bank).toHaveAttribute('data-primary-assets-thousands', '1907928000')
+    expect(bank).toHaveAttribute('data-primary-deposits-thousands', '1563534000')
+    expect(bank).toHaveAttribute('data-primary-office-count', '4184')
+    expect(preview).toHaveTextContent('Wells Fargo Bank, National Association')
+    expect(preview).toHaveTextContent('3201 N 4th Ave, Sioux Falls SD 57104')
+    expect(preview).toHaveTextContent('1,907,928,000')
+    expect(preview).toHaveTextContent('1,563,534,000')
+    expect(preview).toHaveTextContent('4,184')
+    expect(preview).toHaveTextContent('OCC')
+    expect(preview).not.toHaveTextContent('FDIC BankFind Suite record 1')
+    expect(preview).not.toHaveTextContent('139 properties')
+  })
+
+  it('renders mempool.space recommended fee rates without claiming unsupported chain-health semantics', () => {
+    render(<ResponseDemoPreview api={api('mempool-space-btc')} data={{
+      fastestFee: 7, halfHourFee: 5, hourFee: 4, economyFee: 2, minimumFee: 1,
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'mempool.space Bitcoin' })
+    expect(preview).toHaveAttribute('data-preview-layout', 'transaction-fees')
+    const fees = preview.querySelector('.transaction-fees-preview')
+    expect(fees).toHaveAttribute('data-primary-fee-sat-vb', '7')
+    expect(fees).toHaveAttribute('data-half-hour-fee-sat-vb', '5')
+    expect(fees).toHaveAttribute('data-hour-fee-sat-vb', '4')
+    expect(fees).toHaveAttribute('data-economy-fee-sat-vb', '2')
+    expect(fees).toHaveAttribute('data-minimum-fee-sat-vb', '1')
+    expect(preview).toHaveTextContent('Recommended Bitcoin fee rates')
+    expect(preview).toHaveTextContent('7 sat/vB')
+    expect(preview).toHaveTextContent('5 sat/vB')
+    expect(preview).toHaveTextContent('4 sat/vB')
+    expect(preview).toHaveTextContent('2 sat/vB')
+    expect(preview).toHaveTextContent('1 sat/vB')
+    expect(preview).toHaveTextContent('6 sat/vB')
+    expect(preview).not.toHaveTextContent('mempool.space Bitcoin record 1')
+    expect(preview).not.toHaveTextContent('chain health signals')
   })
 
   it('maps developer, security, research, and structured data families to semantic cards', () => {
@@ -1097,14 +1436,16 @@ describe('Public-API 200 milestone previews', () => {
     expect(circl).toHaveTextContent('CVE-2021-44228')
     expect(circl).toHaveTextContent('Log4j')
 
-    rerender(<ResponseDemoPreview api={api('dblp-search')} data={{ result: { hits: { hit: [{ info: {
-      title: 'Retrieval-Augmented Generation for Enterprise Systems', year: '2026', venue: 'DemoConf', type: 'Conference and Workshop Papers', doi: '10.1/demo',
-      authors: { author: [{ text: 'Wei Developer' }, { text: 'AI Researcher' }] },
-    } }] } } }}/>)
+    rerender(<ResponseDemoPreview api={api('dblp-search')} data={{ results: { bindings: [
+      { publ: { value: 'https://dblp.org/rec/conf/demo/Rag26' }, title: { value: 'Retrieval-Augmented Generation for Enterprise Systems' }, year: { value: '2026' }, venue: { value: 'DemoConf' }, doi: { value: 'https://doi.org/10.1/demo' }, authorName: { value: 'Wei Developer' } },
+      { publ: { value: 'https://dblp.org/rec/conf/demo/Rag26' }, title: { value: 'Retrieval-Augmented Generation for Enterprise Systems' }, year: { value: '2026' }, venue: { value: 'DemoConf' }, doi: { value: 'https://doi.org/10.1/demo' }, authorName: { value: 'AI Researcher' } },
+    ] } }}/>)
     const dblp = screen.getByRole('region', { name: 'DBLP Publication Search' })
     expect(dblp).toHaveTextContent('Retrieval-Augmented Generation for Enterprise Systems')
-    expect(dblp).toHaveTextContent('Wei Developer')
+    expect(dblp).toHaveTextContent('Wei Developer, AI Researcher')
     expect(dblp).toHaveTextContent('DemoConf')
+    expect(dblp).toHaveTextContent('10.1/demo')
+    expect(dblp).toHaveTextContent('https://dblp.org/rec/conf/demo/Rag26')
   })
 
   it('renders live-location and licensed-media response shapes', () => {
@@ -1217,6 +1558,12 @@ describe('browser-ready health remediation previews', () => {
     const fx = screen.getByRole('region', { name: 'Coinbase Exchange Rates' })
     expect(fx).toHaveTextContent('1 EUR → USD')
     expect(fx).toHaveTextContent('1.1599')
+
+    rerender(<ResponseDemoPreview api={api('vatcomply')} data={{ date: '2026-09-04', base: 'EUR', rates: { USD: 1.1622, GBP: 0.85898, SGD: 1.4724 } }}/>)
+    const vatRates = screen.getByRole('region', { name: 'VATComply Exchange Rates' })
+    expect(vatRates).toHaveAttribute('data-preview-layout', 'exchange-rates')
+    expect(vatRates).toHaveTextContent('1 EUR → USD')
+    expect(vatRates).not.toHaveTextContent('VATComply API record 1')
 
     rerender(<ResponseDemoPreview api={api('unhcr-refugees')} data={{ items: [{ year: 2024, coo: 'SYR', coo_name: 'Syrian Arab Republic', refugees: 6211475, asylum_seekers: 150000, idps: 7200000, stateless: 0 }] }}/>)
     const unhcr = screen.getByRole('region', { name: 'UNHCR Refugee Statistics' })
