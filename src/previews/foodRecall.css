@@ -1,0 +1,23 @@
+.food-recall-heading > div { min-width: 0; }
+.food-recall-heading > .domain-state { flex: 0 0 auto; }
+.food-recall-narratives { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 18px; }
+.food-recall-narratives article { min-width: 0; padding: 15px; border: 1px solid #dce5ef; border-radius: 11px; background: #fff; }
+.food-recall-narratives article:first-child { grid-column: 1 / -1; }
+.food-recall-narratives small, .food-recall-related small { color: #66758a; font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+.food-recall-narratives h4 { margin: 4px 0 8px; color: #1f3654; }
+.food-recall-narratives p { color: #4d5f75; overflow-wrap: anywhere; }
+.food-recall-related { margin-top: 18px; padding-top: 16px; border-top: 1px solid #dce5ef; }
+.food-recall-related > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.food-recall-related > header h4 { margin-top: 4px; }
+.food-recall-related > header > span { color: #66758a; font-size: 12px; }
+.food-recall-related ol { margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; list-style: none; }
+.food-recall-related li { min-width: 0; padding: 13px; border: 1px solid #e0e7ef; border-radius: 10px; background: #fff; }
+.food-recall-related li > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 7px; }
+.food-recall-related li > div span { color: #66758a; font-size: 11px; }
+.food-recall-related li p { margin: 8px 0; color: #41556d; overflow-wrap: anywhere; }
+.food-recall-related li > small { display: block; overflow-wrap: anywhere; }
+@container domain-card (max-width: 620px) {
+  .food-recall-narratives, .food-recall-related ol { grid-template-columns: 1fr; }
+  .food-recall-narratives article:first-child { grid-column: auto; }
+  .food-recall-related > header { align-items: flex-start; flex-direction: column; }
+}

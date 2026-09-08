@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiCatalog, getApiById, getDefaultParameters, validateParameters, yahooSgxSymbols } from './apiCatalog'
+import { apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, validateParameters } from './apiCatalog'
 import { previewProfileIds, previewProfiles } from './previewProfiles'
 
 describe('API catalog', () => {
@@ -34,13 +34,23 @@ describe('API catalog', () => {
   })
 
   it('includes the expanded recommendations without duplicating the five original providers', () => {
-    expect(apiCatalog).toHaveLength(200)
+    expect(apiCatalog).toHaveLength(195)
     expect(apiCatalog.filter((api) => api.id.startsWith('data-gov-'))).toHaveLength(14)
     expect(getApiById('ipify-public-ip')?.provider).toBe('ipify')
     expect(getApiById('usaspending')?.method).toBe('POST')
     for (const provider of ['Random User', 'Dog CEO', 'JSONPlaceholder', 'Nager.Date']) {
       expect(apiCatalog.filter((api) => api.provider === provider), provider).toHaveLength(1)
     }
+  })
+
+  it('excludes browser-incompatible or policy-incompatible relay-backed catalog entries', () => {
+    expect(getApiById('musicbrainz-artist-search')).toBeUndefined()
+    expect(getApiById('yahoo-finance-sgx-history')).toBeUndefined()
+    expect(getApiById('gutendex-books')).toBeUndefined()
+    expect(getApiById('crates-io-search')).toBeUndefined()
+    expect(getApiById('nws-weather')).toBeUndefined()
+    const defaultHosts = apiCatalog.map((api) => new URL(api.buildUrl(getDefaultParameters(api))).hostname)
+    expect(defaultHosts).not.toContain('r.jina.ai')
   })
 
   it('builds the six new keyless interactive API requests', () => {
@@ -59,18 +69,12 @@ describe('API catalog', () => {
     expect(urls['open-trivia'].searchParams.get('type')).toBe('multiple')
   })
 
-  it('builds the requested long-history market demos', () => {
-    const yahoo = getApiById('yahoo-finance-sgx-history')
+  it('builds the Frankfurter long-history market demo', () => {
     const frankfurter = getApiById('frankfurter-sgd-myr-history')
 
-    expect(yahooSgxSymbols).toHaveLength(22)
-    expect(yahoo).toBeDefined()
     expect(frankfurter).toBeDefined()
-    if (!yahoo || !frankfurter) return
+    if (!frankfurter) return
 
-    expect(yahoo.buildUrl(getDefaultParameters(yahoo))).toContain('/D05.SI?range=max&interval=1mo')
-    expect(yahoo?.parseResponse?.('Header\nMarkdown Content:\n{"chart":{"result":[]}}')).toEqual({ chart: { result: [] } })
-    expect(yahoo.parseResponse?.('{"data":{"content":"{\\"chart\\":{\\"result\\":[]}}"}}')).toEqual({ chart: { result: [] } })
     expect(frankfurter.buildUrl(getDefaultParameters(frankfurter))).toContain('from=1999-01-04')
     expect(frankfurter.buildUrl(getDefaultParameters(frankfurter))).toContain('base=SGD&quotes=MYR&providers=ECB')
   })
@@ -170,10 +174,10 @@ describe('API catalog', () => {
     expect(urls['inaturalist-observations'].searchParams.get('taxon_name')).toBe('Panthera')
   })
 
-  it('builds the fourteen second-expansion API requests', () => {
+  it('builds the thirteen second-expansion API requests', () => {
     const ids = [
       'first-epss', 'endoflife-date', 'deps-dev', 'ecb-fx-rates', 'un-sdg-goals', 'datacite-search',
-      'ror-search', 'celestrak-satellites', 'musicbrainz-artist-search', 'cleveland-museum-search',
+      'ror-search', 'celestrak-satellites', 'cleveland-museum-search',
       'scryfall-card-search', 'dnd5e-spell-lookup', 'qr-code-generator', 'where-the-iss-at',
     ]
     const urls = Object.fromEntries(ids.map((id) => {
@@ -193,7 +197,6 @@ describe('API catalog', () => {
     expect(urls['datacite-search'].searchParams.get('query')).toBe('climate change')
     expect(urls['ror-search'].searchParams.get('query')).toBe('stanford')
     expect(urls['celestrak-satellites'].searchParams.get('GROUP')).toBe('stations')
-    expect(urls['musicbrainz-artist-search'].searchParams.get('query')).toBe('queen')
     expect(urls['cleveland-museum-search'].searchParams.get('q')).toBe('monet')
     expect(urls['scryfall-card-search'].searchParams.get('q')).toBe('dragon')
     expect(urls['dnd5e-spell-lookup'].pathname).toBe('/api/2014/spells/fireball')
@@ -204,13 +207,13 @@ describe('API catalog', () => {
     expect(qrApi?.parseResponse?.('binary-png-bytes')).toEqual({ note: 'Binary PNG image response — see the rendered QR code below.', approximateBytes: 16 })
   })
 
-  it('builds the twenty-nine third-expansion API requests', () => {
+  it('builds the twenty-seven remaining third-expansion API requests', () => {
     const ids = [
       'eurostat-population', 'bls-timeseries', 'fema-disasters', 'noaa-tides', 'rdap-domain-lookup',
       'languagetool-grammar-check', 'zenodo-search', 'doaj-search', 'pubchem-compound', 'chembl-molecule',
       'uniprot-protein', 'rcsb-pdb-entry', 'ensembl-gene-lookup', 'obis-marine-occurrences', 'worms-species-lookup',
-      'paleobiodb-taxa', 'usgs-water-legacy', 'crates-io-search', 'rubygems-lookup', 'nuget-package-lookup',
-      'internet-archive-search', 'ipwhois-lookup', 'newton-math-solver', 'gutendex-books', 'datamuse-rhymes',
+      'paleobiodb-taxa', 'usgs-water-legacy', 'rubygems-lookup', 'nuget-package-lookup',
+      'internet-archive-search', 'ipwhois-lookup', 'newton-math-solver', 'datamuse-rhymes',
       'open5e-monster-search', 'dicebear-avatar', 'catfacts', 'randomfox-photo',
     ]
     const urls = Object.fromEntries(ids.map((id) => {
@@ -224,6 +227,13 @@ describe('API catalog', () => {
     expect(urls['bls-timeseries'].pathname).toBe('/publicAPI/v2/timeseries/data/LNS14000000')
     expect(urls['fema-disasters'].searchParams.get('$top')).toBe('5')
     expect(urls['noaa-tides'].searchParams.get('station')).toBe('8518750')
+    expect(urls['noaa-tides'].searchParams.get('product')).toBe('water_level')
+    expect(urls['noaa-tides'].searchParams.get('date')).toBe('latest')
+    expect(urls['noaa-tides'].searchParams.get('datum')).toBe('MLLW')
+    expect(urls['noaa-tides'].searchParams.get('units')).toBe('metric')
+    expect(urls['noaa-tides'].searchParams.get('time_zone')).toBe('gmt')
+    expect(urls['noaa-tides'].searchParams.get('application')).toBe('Public_API_Workbench')
+    expect(urls['noaa-tides'].searchParams.get('format')).toBe('json')
     expect(urls['rdap-domain-lookup'].pathname).toBe('/domain/google.com')
     expect(urls['languagetool-grammar-check'].toString()).toBe('https://api.languagetool.org/v2/check')
     expect(urls['zenodo-search'].searchParams.get('q')).toBe('climate')
@@ -237,13 +247,11 @@ describe('API catalog', () => {
     expect(urls['worms-species-lookup'].pathname).toBe('/rest/AphiaRecordsByName/Delphinus%20delphis')
     expect(urls['paleobiodb-taxa'].searchParams.get('name')).toBe('Tyrannosaurus')
     expect(urls['usgs-water-legacy'].searchParams.get('sites')).toBe('01646500')
-    expect(urls['crates-io-search'].pathname).toBe('/api/v1/crates/serde')
     expect(urls['rubygems-lookup'].pathname).toBe('/api/v1/gems/rails.json')
     expect(urls['nuget-package-lookup'].pathname).toBe('/v3/registration5-semver1/newtonsoft.json/index.json')
     expect(urls['internet-archive-search'].searchParams.get('q')).toBe('singapore AND mediatype:texts')
     expect(urls['ipwhois-lookup'].pathname).toBe('/8.8.8.8')
     expect(urls['newton-math-solver'].pathname).toBe('/api/v2/simplify/2x%2B2x')
-    expect(urls['gutendex-books'].searchParams.get('search')).toBe('shakespeare')
     expect(urls['datamuse-rhymes'].searchParams.get('rel_rhy')).toBe('orange')
     expect(urls['open5e-monster-search'].hostname).toBe('api.open5e.com')
     expect(urls['open5e-monster-search'].searchParams.get('search')).toBe('dragon')
@@ -307,7 +315,11 @@ describe('API catalog', () => {
     expect(urls['hebcal-calendar'].hostname).toBe('www.hebcal.com')
     expect(urls['hebcal-calendar'].pathname).toBe('/hebcal/')
     expect(urls['aladhan-prayer-times'].hostname).toBe('api.aladhan.com')
-    expect(urls['aladhan-prayer-times'].pathname).toContain('/v1/timings/')
+    const aladhan = getApiById('aladhan-prayer-times')
+    const aladhanDate = aladhan?.fields.find((field) => field.id === 'date')?.defaultValue ?? ''
+    const [aladhanYear, aladhanMonth, aladhanDay] = aladhanDate.split('-')
+    expect(aladhan?.fields.find((field) => field.id === 'date')?.type).toBe('date')
+    expect(urls['aladhan-prayer-times'].pathname).toBe(`/v1/timings/${aladhanDay}-${aladhanMonth}-${aladhanYear}`)
     expect(urls['aladhan-prayer-times'].searchParams.get('method')).toBe('11')
     expect(urls['aladhan-prayer-times'].searchParams.get('latitude')).toBe('1.3521')
     expect(urls['aladhan-prayer-times'].searchParams.get('longitude')).toBe('103.8198')
@@ -384,8 +396,10 @@ describe('API catalog', () => {
     expect(urls['gleif-lei'].hostname).toBe('api.gleif.org')
     expect(urls['gleif-lei'].searchParams.get('filter[entity.legalName]')).toBe('Royal Bank of Canada')
     expect(urls['gleif-lei'].searchParams.get('page[size]')).toBe('8')
-    expect(urls['fdic-bankfind'].hostname).toBe('banks.data.fdic.gov')
-    expect(urls['fdic-bankfind'].searchParams.get('q')).toBe('Wells Fargo')
+    expect(urls['fdic-bankfind'].hostname).toBe('api.fdic.gov')
+    expect(urls['fdic-bankfind'].pathname).toBe('/banks/institutions')
+    expect(urls['fdic-bankfind'].searchParams.get('search')).toBe('NAME: WELLS FARGO')
+    expect(urls['fdic-bankfind'].searchParams.has('q')).toBe(false)
     expect(urls['fdic-bankfind'].searchParams.get('limit')).toBe('6')
 
     const foodHygiene = getApiById('uk-food-hygiene')
@@ -417,6 +431,8 @@ describe('API catalog', () => {
     expect(urls['vatcomply'].searchParams.get('base')).toBe('EUR')
     expect(urls['mempool-space-btc'].hostname).toBe('mempool.space')
     expect(urls['mempool-space-btc'].pathname).toBe('/api/v1/fees/recommended')
+    expect(getApiById('mempool-space-btc')?.description).toContain('recommended Bitcoin transaction fee rates')
+    expect(getApiById('mempool-space-btc')?.description).not.toContain('chain health')
 
     expect(urls['metacpan'].hostname).toBe('fastapi.metacpan.org')
     expect(urls['metacpan'].pathname).toBe('/v1/module/_search')
@@ -481,6 +497,17 @@ describe('API catalog', () => {
     expect(urls['vam-collections'].searchParams.get('page_size')).toBe('6')
   })
 
+  it('escapes DBLP title-search text inside the SPARQL literal and bounds the requested result count', () => {
+    const api = getApiById('dblp-search')
+    expect(api).toBeDefined()
+    if (!api) return
+    const url = new URL(api.buildUrl({ query: 'agent "safety" \\ research', limit: '999' }))
+    const query = url.searchParams.get('query') ?? ''
+    expect(query).toContain(String.raw`LCASE("agent \"safety\" \\ research")`)
+    expect(query).toContain('LIMIT 20')
+    expect(query).not.toContain('LIMIT 999')
+  })
+
   it('builds the twelve Public-API 200 milestone requests', () => {
     const ids = [
       'github-global-advisories', 'dblp-search', 'citybikes-network', 'wikimedia-commons-search',
@@ -498,9 +525,13 @@ describe('API catalog', () => {
     expect(urls['github-global-advisories'].pathname).toBe('/advisories')
     expect(urls['github-global-advisories'].searchParams.get('ecosystem')).toBe('npm')
     expect(urls['github-global-advisories'].searchParams.get('severity')).toBe('high')
-    expect(urls['dblp-search'].hostname).toBe('dblp.org')
-    expect(urls['dblp-search'].pathname).toBe('/search/publ/api')
-    expect(urls['dblp-search'].searchParams.get('format')).toBe('json')
+    expect(urls['dblp-search'].hostname).toBe('sparql.dblp.org')
+    expect(urls['dblp-search'].pathname).toBe('/sparql')
+    const dblpQuery = urls['dblp-search'].searchParams.get('query') ?? ''
+    expect(dblpQuery).toContain('dblp:title ?title')
+    expect(dblpQuery).toContain('LCASE("large language models")')
+    expect(dblpQuery).toContain('LIMIT 6')
+    expect(getApiById('dblp-search')?.headers?.Accept).toBe('application/sparql-results+json')
     expect(urls['citybikes-network'].pathname).toBe('/v2/networks/youbike-taipei')
     expect(urls['wikimedia-commons-search'].hostname).toBe('commons.wikimedia.org')
     expect(urls['wikimedia-commons-search'].searchParams.get('origin')).toBe('*')
@@ -560,19 +591,97 @@ describe('API catalog', () => {
     expect(new URL(mlb.buildUrl(getDefaultParameters(mlb))).searchParams.has('teamId')).toBe(false)
   })
 
+
+  it('keeps provider automation restrictions in the catalog SSOT', () => {
+    const languageTool = getApiById('languagetool-grammar-check')
+    const color = getApiById('color-api')
+    expect(languageTool).toBeDefined()
+    expect(color).toBeDefined()
+    if (!languageTool || !color) return
+
+    const nominatim = getApiById('nominatim-search')
+    expect(nominatim).toBeDefined()
+    expect(getAgentExecutionPolicy(languageTool)).toEqual({
+      mode: 'manual-only',
+      reason: 'LanguageTool’s free public endpoint prohibits automated requests. Use a self-hosted or Enterprise instance for automation.',
+      policyUrl: 'https://dev.languagetool.org/public-http-api.html',
+    })
+    if (nominatim) {
+      expect(getAgentExecutionPolicy(nominatim)).toMatchObject({
+        mode: 'manual-only',
+        policyUrl: 'https://operations.osmfoundation.org/policies/nominatim/',
+      })
+    }
+    expect(getAgentExecutionPolicy(color)).toEqual({ mode: 'enabled' })
+
+    const manualOnly = apiCatalog.filter((api) => getAgentExecutionPolicy(api).mode === 'manual-only')
+    expect(manualOnly.map((api) => api.id).sort()).toEqual(['languagetool-grammar-check', 'nominatim-search'])
+    for (const api of manualOnly) {
+      const policy = getAgentExecutionPolicy(api)
+      expect(policy.mode).toBe('manual-only')
+      if (policy.mode !== 'manual-only') continue
+      expect(policy.reason.trim().length, api.id).toBeGreaterThan(20)
+      expect(policy.policyUrl, api.id).toMatch(/^https:\/\//)
+    }
+  })
+
+  it('keeps provider-specific automated verification cadence in the catalog SSOT', () => {
+    const celestrak = getApiById('celestrak-satellites')
+    const color = getApiById('color-api')
+    expect(celestrak).toBeDefined()
+    expect(color).toBeDefined()
+    if (!celestrak || !color) return
+
+    expect(getAutomatedVerificationPolicy(celestrak)).toEqual({
+      mode: 'cadence-limited',
+      minimumIntervalSeconds: 7200,
+      retryOnNon2xx: false,
+      reason: 'CelesTrak asks machine clients to download GP data only once per update and to stop immediately after any non-200 response.',
+      policyUrl: 'https://celestrak.org/usage-policy.php',
+    })
+    expect(getAutomatedVerificationPolicy(color)).toEqual({ mode: 'enabled' })
+  })
+
   it('finds API demos by ID', () => {
     expect(getApiById('weather')?.provider).toBe('Open-Meteo')
     expect(getApiById('missing')).toBeUndefined()
   })
 
-  it('validates required and bounded numeric parameters', () => {
+  it('validates required, numeric, text-length, date, and select constraints from the field SSOT', () => {
     const weather = getApiById('weather')
+    const people = getApiById('people')
+    const geoBoundaries = getApiById('geoboundaries-admin-boundaries')
+    const aladhan = getApiById('aladhan-prayer-times')
     expect(weather).toBeDefined()
-    if (!weather) return
+    expect(people).toBeDefined()
+    expect(geoBoundaries).toBeDefined()
+    expect(aladhan).toBeDefined()
+    if (!weather || !people || !geoBoundaries || !aladhan) return
 
     expect(validateParameters(weather, { latitude: '', longitude: '200' })).toEqual({
       latitude: 'Latitude is required.',
       longitude: 'Longitude must be at most 180.',
     })
+    expect(validateParameters(people, { count: '3', nationality: 'xx' })).toEqual({
+      nationality: 'Nationality must be one of the supported options.',
+    })
+    expect(validateParameters(geoBoundaries, { countryIso: 'SG', adminLevel: 'ADM0' })).toEqual({
+      countryIso: 'Country ISO must be at least 3 characters.',
+    })
+    expect(validateParameters(geoBoundaries, { countryIso: 'SGP', adminLevel: 'ADM9' })).toEqual({
+      adminLevel: 'Admin level must be one of the supported options.',
+    })
+    expect(validateParameters(aladhan, { latitude: '1.3521', longitude: '103.8198', method: '11', date: '2026-02-30' })).toEqual({
+      date: 'Date must be a valid date in YYYY-MM-DD format.',
+    })
+  })
+
+  it('keeps every select default inside its declared option set', () => {
+    for (const api of apiCatalog) {
+      for (const field of api.fields.filter((candidate) => candidate.type === 'select')) {
+        expect(field.options?.length, `${api.id}.${field.id} must declare select options`).toBeGreaterThan(0)
+        expect(field.options?.some((option) => option.value === field.defaultValue), `${api.id}.${field.id} default must be a supported option`).toBe(true)
+      }
+    }
   })
 })

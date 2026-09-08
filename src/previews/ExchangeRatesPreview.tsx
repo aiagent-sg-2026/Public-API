@@ -16,7 +16,11 @@ export function coinbaseRateModel(data: unknown): RatesModel {
   const payload = asRecord(root.data)
   return { base: text(payload.currency), rates: normalizeRates(payload.rates), failed: Array.isArray(root.errors) && root.errors.length > 0 }
 }
-function RateBoard({ model, source }: { model: RatesModel; source: 'exchange-rate-api' | 'coinbase' }) {
+export function vatcomplyRateModel(data: unknown): RatesModel {
+  const root = asRecord(data)
+  return { base: text(root.base), rates: normalizeRates(root.rates), updated: text(root.date), failed: false }
+}
+function RateBoard({ model, source }: { model: RatesModel; source: 'exchange-rate-api' | 'coinbase' | 'vatcomply' }) {
   const id = useId()
   const [amount, setAmount] = useState('100')
   const [selected, setSelected] = useState(source === 'exchange-rate-api' ? 'MYR' : 'USD')
@@ -27,7 +31,7 @@ function RateBoard({ model, source }: { model: RatesModel; source: 'exchange-rat
   const input = finite(amount)
   const product = input !== undefined && input >= 0 && target ? input * target.value : undefined
   const converted = product !== undefined && Number.isFinite(product) ? product : undefined
-  const preferred = source === 'exchange-rate-api' ? ['MYR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CNY', 'SGD'] : ['USD', 'GBP', 'JPY', 'CHF', 'SGD', 'AUD', 'CAD', 'MYR', 'BTC', 'ETH']
+  const preferred = source === 'exchange-rate-api' ? ['MYR', 'USD', 'EUR', 'GBP', 'JPY', 'AUD', 'CNY', 'SGD'] : source === 'vatcomply' ? ['USD', 'SGD', 'GBP', 'JPY', 'AUD', 'CAD', 'CHF', 'MYR'] : ['USD', 'GBP', 'JPY', 'CHF', 'SGD', 'AUD', 'CAD', 'MYR', 'BTC', 'ETH']
   const ordered = [...otherRates].sort((a, b) => {
     const rank = (code: string) => preferred.includes(code) ? preferred.indexOf(code) : preferred.length
     return rank(a.code) - rank(b.code) || a.code.localeCompare(b.code, 'en')
@@ -41,13 +45,14 @@ function RateBoard({ model, source }: { model: RatesModel; source: 'exchange-rat
         <label htmlFor={`${id}-target`}>Convert to</label><select id={`${id}-target`} value={target?.code} onChange={(event) => setSelected(event.target.value)}>{otherRates.map((rate) => <option key={rate.code} value={rate.code}>{rate.code}</option>)}</select></div>
       <div className="fx-output"><span>Estimated amount</span><output aria-label="Converted amount" data-currency={target?.code} data-value={converted} htmlFor={`${id}-amount ${id}-target`}>{converted === undefined ? '—' : numericText(converted)} <small>{target?.code}</small></output><p>1 {model.base} = <strong>{target?.raw}</strong> {target?.code}</p>{converted === undefined && <p id={`${id}-error`}>Enter a finite, non-negative amount within the calculation range.</p>}</div>
     </div>
-    <Facts items={[{ label: 'Rates available', value: otherRates.length }, { label: 'Provider update time', value: model.updated ?? 'Not supplied in this response' }, ...(model.nextUpdate ? [{ label: 'Next provider update', value: model.nextUpdate }] : [])]}/>
+    <Facts items={[{ label: 'Rates available', value: otherRates.length }, { label: source === 'vatcomply' ? 'Reference date' : 'Provider update time', value: model.updated ?? 'Not supplied in this response' }, ...(model.nextUpdate ? [{ label: 'Next provider update', value: model.nextUpdate }] : [])]}/>
     <div className="domain-toolbar"><label htmlFor={`${id}-filter`}>Filter currencies</label><input id={`${id}-filter`} type="search" placeholder="e.g. MYR, USD, BTC" value={query} onChange={(event) => { setQuery(event.target.value); setLimit(8) }}/><span role="status">{Math.min(limit, filtered.length)} of {filtered.length} rates shown</span></div>
     <ul className="fx-rates" role="list" aria-label="Exchange rates from this response">{filtered.slice(0, limit).map((rate) => <li key={rate.code} data-currency={rate.code} data-rate={rate.raw}><span>1 {model.base} → {rate.code}</span><strong>{rate.raw}</strong></li>)}</ul>
     {!filtered.length && <p className="domain-notice">No currency codes match this filter. Clear it to see the available rates.</p>}
     {filtered.length > limit && <button className="domain-more" type="button" onClick={() => setLimit((count) => count + 24)}>Show more rates</button>}
     <p className="domain-note">Reference estimate only; not a trade quote. Fees and spreads are not included. Converted amounts use rounded browser arithmetic; the rate list preserves the supplied values.</p>
     {source === 'exchange-rate-api' && <p className="domain-note"><a href="https://www.exchangerate-api.com" target="_blank" rel="noreferrer">Rates By Exchange Rate API</a> · Open endpoint updates once per day.</p>}
+    {source === 'vatcomply' && <p className="domain-note">This card reflects VATComply's <code>/rates</code> response only. VAT-number and IBAN validation are separate provider endpoints and are not implied by this result.</p>}
   </div>
 }
 export function ExchangeRateApiPreview({ data }: { data: unknown }) {
@@ -57,4 +62,8 @@ export function ExchangeRateApiPreview({ data }: { data: unknown }) {
 export function CoinbaseRatesPreview({ data }: { data: unknown }) {
   const model = coinbaseRateModel(data)
   return <RateBoard key={model.base} model={model} source="coinbase"/>
+}
+export function VatcomplyRatesPreview({ data }: { data: unknown }) {
+  const model = vatcomplyRateModel(data)
+  return <RateBoard key={model.base} model={model} source="vatcomply"/>
 }

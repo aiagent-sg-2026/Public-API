@@ -21,6 +21,28 @@ export type PreviewLayout =
   | 'security-center'
   | 'research-library'
   | 'dictionary-entry'
+  | 'drug-label'
+  | 'food-recalls'
+  | 'prayer-schedule'
+  | 'drug-terminology'
+  | 'coastal-water-level'
+  | 'protein-annotation'
+  | 'molecular-structure'
+  | 'molecule-profile'
+  | 'compound-properties'
+  | 'gene-locus'
+  | 'domain-registration'
+  | 'legal-entity'
+  | 'bank-institution'
+  | 'route-summary'
+  | 'transaction-fees'
+  | 'availability-board'
+  | 'collection-index'
+  | 'manufacturer-directory'
+  | 'taxonomy-directory'
+  | 'motorsport-results'
+  | 'quote-card'
+  | 'character-dossier'
   | 'data-table'
   | 'fuel-dashboard'
   | 'marine-forecast'
@@ -42,7 +64,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['posts', 'developer-feed', 'REST post inspector'],
   ['holidays', 'calendar-timeline', 'International holiday planner'],
   ['hebcal-calendar', 'calendar-timeline', 'Hebrew and Jewish observance calendar'],
-  ['aladhan-prayer-times', 'data-table', 'Prayer times and Hijri calendar metadata'],
+  ['aladhan-prayer-times', 'prayer-schedule', 'Daily prayer schedule and calendar context'],
   ['geocoding-search', 'location-map', 'Global geocoding result map'],
   ['open-meteo-air-quality', 'weather-dashboard', 'Coordinate air-quality monitor'],
   ['sunrise-sunset', 'solar-cycle', 'Daylight and solar clock'],
@@ -53,7 +75,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['data-gov-24hr-forecast', 'weather-dashboard', 'Singapore 24-hour outlook'],
   ['data-gov-4day-forecast', 'weather-dashboard', 'Singapore four-day planner'],
   ['data-gov-air-temperature', 'weather-dashboard', 'Temperature station network'],
-  ['data-gov-carpark', 'data-table', 'Singapore carpark capacity dashboard'],
+  ['data-gov-carpark', 'availability-board', 'Singapore carpark capacity dashboard'],
   ['data-gov-forecast-2hr', 'weather-dashboard', 'Neighbourhood forecast matrix'],
   ['data-gov-pm25', 'weather-dashboard', 'PM2.5 regional monitor'],
   ['data-gov-psi', 'weather-dashboard', 'PSI regional health panel'],
@@ -71,15 +93,14 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['hacker-news', 'developer-feed', 'Hacker News story brief'],
   ['ipify-public-ip', 'data-table', 'Public IP network card'],
   ['met-museum-object-detail', 'media-gallery', 'Museum object spotlight'],
-  ['met-museum-search', 'data-table', 'Met collection search index'],
-  ['nhtsa-vpic', 'data-table', 'Vehicle manufacturer registry'],
+  ['met-museum-search', 'collection-index', 'Met collection search index'],
+  ['nhtsa-vpic', 'manufacturer-directory', 'Vehicle manufacturer registry'],
   ['nhtsa-vehicle-recalls', 'vehicle-recalls', 'Vehicle defect, consequence and remedy'],
   ['npm-search', 'developer-feed', 'npm package comparison grid'],
   ['nvd-cpe-search', 'security-center', 'CPE product dictionary'],
   ['nvd-cve-detail', 'security-center', 'Single CVE investigation dossier'],
   ['nvd-cves', 'security-center', 'CVE search result center'],
   ['nvd-recent-cves', 'security-center', 'Recently modified CVE watchlist'],
-  ['nws-weather', 'data-table', 'US weather alert board'],
   ['postcodes-io', 'location-map', 'UK postcode intelligence card'],
   ['pypi-json', 'developer-feed', 'Python package release profile'],
   ['stack-exchange', 'developer-feed', 'Stack Overflow activity queue'],
@@ -99,12 +120,11 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['art-institute-search', 'media-gallery', 'Art Institute exhibition wall'],
   ['tvmaze-search', 'media-gallery', 'Television show discovery rail'],
   ['open-food-facts', 'media-gallery', 'Food product nutrition label'],
-  ['gbif-species-search', 'data-table', 'Species taxonomy explorer'],
+  ['gbif-species-search', 'taxonomy-directory', 'Species taxonomy explorer'],
   ['clinical-trials-search', 'research-library', 'Clinical study registry'],
   ['europe-pmc-search', 'research-library', 'Life-science paper library'],
-  ['openfda-drug-labels', 'data-table', 'Regulated drug label viewer'],
+  ['openfda-drug-labels', 'drug-label', 'FDA regulated drug label summary'],
   ['coinpaprika-ticker', 'market-chart', 'Cryptocurrency market terminal'],
-  ['yahoo-finance-sgx-history', 'market-chart', 'SGX equity history terminal'],
   ['malaysia-fuel-price', 'fuel-dashboard', 'Malaysia weekly fuel-price board'],
   ['open-meteo-marine', 'marine-forecast', 'Coastal and ocean forecast cockpit'],
   ['nobel-prizes', 'awards-timeline', 'Nobel laureate and discovery timeline'],
@@ -122,7 +142,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['open-brewery-directory', 'location-map', 'Global brewery location directory'],
   ['rick-morty-characters', 'media-gallery', 'Character and episode gallery'],
   ['wikimedia-pageviews', 'market-chart', 'Wikipedia readership trend chart'],
-  ['openf1-historical', 'data-table', 'Formula 1 qualifying classification'],
+  ['openf1-historical', 'motorsport-results', 'Formula 1 qualifying classification'],
   ['jolpica-f1', 'data-table', 'Jolpica Formula 1 season data'],
   ['open-meteo-elevation', 'data-table', 'Terrain elevation lookup'],
   ['zippopotam-postcode', 'location-map', 'Postcode geolocation lookup'],
@@ -131,7 +151,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['spaceflight-news', 'media-gallery', 'Spaceflight newsroom briefing wall'],
   ['launch-library-upcoming', 'calendar-timeline', 'Upcoming mission launch countdown'],
   ['wiktionary-entry', 'dictionary-entry', 'Wiktionary structured language entry'],
-  ['animechan-random-quote', 'data-table', 'Anime quote character stage'],
+  ['animechan-random-quote', 'quote-card', 'Anime quote character stage'],
   ['anilist-graphql', 'media-gallery', 'AniList media discovery'],
   ['openverse-search', 'media-gallery', 'Openverse media search'],
   ['apple-itunes-search', 'media-gallery', 'Apple iTunes search wall'],
@@ -144,13 +164,13 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['brasilapi-postcode', 'location-map', 'Brazilian postcode location profile'],
   ['poetrydb-poems', 'research-library', 'Public-domain poetry reading room'],
   ['coingecko-keyless-market', 'market-chart', 'Keyless cryptocurrency market snapshot'],
-  ['swapi-people', 'data-table', 'Star Wars character dossier'],
+  ['swapi-people', 'character-dossier', 'Star Wars character dossier'],
   ['google-dns-doh', 'dns-records', 'DNS resolution and answer records'],
   ['color-api', 'color-swatch', 'Color swatch and specifications'],
   ['nasa-image-search', 'media-gallery', 'NASA media discovery wall'],
   ['lichess-top-players', 'chess-ratings', 'Lichess leaderboard board'],
   ['pubmed-search', 'research-library', 'PubMed identifier search results'],
-  ['rxnorm-drug-search', 'data-table', 'Standardized drug name registry'],
+  ['rxnorm-drug-search', 'drug-terminology', 'RxNorm drug terminology registry'],
   ['inaturalist-observations', 'media-gallery', 'Species observation photo wall'],
   ['first-epss', 'security-center', 'CVE exploitation probability score'],
   ['endoflife-date', 'release-lifecycle', 'Software release support explorer'],
@@ -160,7 +180,6 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['datacite-search', 'research-library', 'DataCite DOI search results'],
   ['ror-search', 'research-library', 'Research organization registry profile'],
   ['celestrak-satellites', 'data-table', 'Satellite orbital elements board'],
-  ['musicbrainz-artist-search', 'data-table', 'MusicBrainz artist search results'],
   ['cleveland-museum-search', 'media-gallery', 'Open-access artwork gallery'],
   ['scryfall-card-search', 'media-gallery', 'Magic: The Gathering card gallery'],
   ['dnd5e-spell-lookup', 'dictionary-entry', 'D&D 5e spell reference card'],
@@ -169,27 +188,25 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['eurostat-population', 'data-table', 'Eurostat population statistics record'],
   ['bls-timeseries', 'market-chart', 'U.S. labor statistics time series'],
   ['fema-disasters', 'data-table', 'FEMA disaster declaration board'],
-  ['noaa-tides', 'data-table', 'NOAA tide station reading'],
-  ['rdap-domain-lookup', 'data-table', 'RDAP domain registration record'],
+  ['noaa-tides', 'coastal-water-level', 'NOAA coastal water-level observation'],
+  ['rdap-domain-lookup', 'domain-registration', 'RDAP domain registration record'],
   ['languagetool-grammar-check', 'grammar-review', 'Writing issues and suggested replacements'],
   ['zenodo-search', 'research-library', 'Zenodo research record search'],
   ['doaj-search', 'research-library', 'Open-access article search'],
-  ['pubchem-compound', 'data-table', 'PubChem compound property card'],
-  ['chembl-molecule', 'data-table', 'ChEMBL molecule profile card'],
-  ['uniprot-protein', 'data-table', 'UniProt protein annotation card'],
-  ['rcsb-pdb-entry', 'data-table', 'Protein Data Bank structure card'],
-  ['ensembl-gene-lookup', 'data-table', 'Ensembl gene location card'],
+  ['pubchem-compound', 'compound-properties', 'PubChem compound property profile'],
+  ['chembl-molecule', 'molecule-profile', 'ChEMBL molecule research profile'],
+  ['uniprot-protein', 'protein-annotation', 'UniProt protein annotation profile'],
+  ['rcsb-pdb-entry', 'molecular-structure', 'Protein Data Bank structure record'],
+  ['ensembl-gene-lookup', 'gene-locus', 'Ensembl stable gene locus profile'],
   ['obis-marine-occurrences', 'data-table', 'Marine species occurrence board'],
   ['worms-species-lookup', 'data-table', 'Marine taxonomy registry card'],
   ['paleobiodb-taxa', 'data-table', 'Fossil taxon record card'],
   ['usgs-water-legacy', 'data-table', 'River gauge reading card'],
-  ['crates-io-search', 'developer-feed', 'Rust crate release profile'],
   ['rubygems-lookup', 'developer-feed', 'Ruby gem release profile'],
   ['nuget-package-lookup', 'developer-feed', '.NET package release profile'],
   ['internet-archive-search', 'media-gallery', 'Archived media discovery wall'],
   ['ipwhois-lookup', 'data-table', 'IP geolocation network card'],
   ['newton-math-solver', 'data-table', 'Math expression result card'],
-  ['gutendex-books', 'research-library', 'Public-domain book search'],
   ['datamuse-rhymes', 'data-table', 'Word relation result list'],
   ['open5e-monster-search', 'data-table', 'Tabletop monster stat board'],
   ['dicebear-avatar', 'media-gallery', 'Generated avatar preview'],
@@ -198,25 +215,25 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['malaysia-core-cpi', 'data-table', 'Malaysia core CPI records'],
   ['malaysia-household-income', 'data-table', 'Malaysia household income records'],
   ['malaysia-population', 'data-table', 'Malaysia population profile'],
-  ['openfda-food-recalls', 'data-table', 'FDA food recall alerts'],
+  ['openfda-food-recalls', 'food-recalls', 'FDA food recall enforcement reports'],
   ['iconify-search', 'data-table', 'Icon search results'],
   ['homebrew-formula-json', 'data-table', 'Homebrew package metadata'],
   ['npm-download-counts', 'download-summary', 'Package download reporting window'],
   ['geoboundaries-admin-boundaries', 'data-table', 'Administrative boundary metadata'],
-  ['osrm-route', 'data-table', 'OSRM route calculation'],
+  ['osrm-route', 'route-summary', 'OSRM route summary and turn steps'],
   ['opendota-pro-matches', 'data-table', 'OpenDota pro matches'],
   ['openligadb-matches', 'data-table', 'OpenLigaDB fixtures'],
   ['uk-parliament-members', 'data-table', 'UK Parliament members directory'],
-  ['gleif-lei', 'data-table', 'Global LEI legal-entity lookup'],
-  ['fdic-bankfind', 'data-table', 'U.S. bank license and financial profile'],
+  ['gleif-lei', 'legal-entity', 'Global LEI legal-entity profile'],
+  ['fdic-bankfind', 'bank-institution', 'FDIC institution identity and financial snapshot'],
   ['uk-food-hygiene', 'data-table', 'UK food hygiene inspection scores'],
   ['uk-flood-monitoring', 'data-table', 'UK flood warning and station monitoring'],
   ['unhcr-refugees', 'data-table', 'Refugee and displacement statistics'],
   ['hdx-humanitarian-datasets', 'data-table', 'IFRC GO emergency event brief'],
   ['open-meteo-climate', 'market-chart', 'Climate model projection comparison'],
   ['models-dev', 'data-table', 'Hugging Face model search'],
-  ['vatcomply', 'data-table', 'VAT and exchange-rate operations'],
-  ['mempool-space-btc', 'data-table', 'Bitcoin network health board'],
+  ['vatcomply', 'exchange-rates', 'VATComply daily exchange-rate conversion'],
+  ['mempool-space-btc', 'transaction-fees', 'Bitcoin recommended transaction fee rates'],
   ['metacpan', 'developer-feed', 'Perl/CPAN module discovery'],
   ['hexpm', 'developer-feed', 'Hex package distribution lookup'],
   ['pub-dev', 'developer-feed', 'Dart and Flutter package lookup'],

@@ -3,6 +3,8 @@ import {
   apiCategories,
   apiCatalog,
   getDefaultParameters,
+  getAgentExecutionPolicy,
+  getAutomatedVerificationPolicy,
   getApiById,
   validateParameters,
   type ApiCategory,
@@ -10,19 +12,11 @@ import {
 } from './apiCatalog'
 import { useWebMcp, WEBMCP_TOOL_COUNT, WEBMCP_TOOL_UI_LIST, type AdminSection } from './webmcp'
 import { buildRequestLabHash, readHashPath, readRequestLabApiId } from './routes'
+import { useModalFocusTrap } from './useModalFocusTrap'
+import { useApiRequestRuntime } from './useApiRequestRuntime'
 
 const loadResponsePreview = () => import('./responsePreview')
 const LazyResponseDemoPreview = lazy(() => loadResponsePreview().then(({ ResponseDemoPreview }) => ({ default: ResponseDemoPreview })))
-
-type RequestErrorKind = 'rate-limit' | 'provider-unavailable' | 'http-error' | 'network-or-cors' | 'timeout' | 'unknown'
-
-export const REQUEST_TIMEOUT_MS = 20_000
-
-type RequestState =
-  | { status: 'idle' }
-  | { status: 'loading' }
-  | { status: 'success'; data: unknown; httpStatus: number; elapsed: number; size: number; url: string }
-  | { status: 'error'; message: string; url: string; errorType: RequestErrorKind; httpStatus?: number }
 
 type AdminPage =
   | 'overview'
@@ -96,39 +90,6 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   return <svg aria-hidden="true" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>
 }
 
-async function fetchApi(api: ApiDemo, parameters: Record<string, string>, signal?: AbortSignal) {
-  const url = api.buildUrl(parameters)
-  const method = api.method ?? DEFAULT_HTTP_METHOD
-  const body = api.buildBody?.(parameters)
-  const isForm = api.bodyEncoding === 'form'
-  const started = performance.now()
-  const requestHeaders = {
-    Accept: 'application/json',
-    ...(api.headers ?? {}),
-    ...(body === undefined ? {} : { 'Content-Type': isForm ? 'application/x-www-form-urlencoded' : 'application/json' }),
-  }
-  const response = await fetch(url, {
-    method,
-    headers: requestHeaders,
-    signal,
-    ...(body === undefined ? {} : { body: isForm ? new URLSearchParams(body as Record<string, string>).toString() : JSON.stringify(body) }),
-  })
-  const text = await response.text()
-  let data: unknown
-  if (api.parseResponse) {
-    data = api.parseResponse(text)
-  } else {
-    try { data = JSON.parse(text) as unknown } catch { data = text }
-  }
-  if (!response.ok) {
-    const error = new Error(`The API returned ${response.status} ${response.statusText}.`) as Error & { httpStatus: number; errorType: RequestErrorKind }
-    error.httpStatus = response.status
-    error.errorType = response.status === 429 ? 'rate-limit' : response.status >= 500 ? 'provider-unavailable' : 'http-error'
-    throw error
-  }
-  return { data, httpStatus: response.status, elapsed: Math.round(performance.now() - started), size: new Blob([text]).size, url }
-}
-
 const formatBytes = (bytes: number) => bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`
 const codeSample = (api: ApiDemo, parameters: Record<string, string>) => {
   const url = api.buildUrl(parameters)
@@ -150,28 +111,18 @@ const codeSample = (api: ApiDemo, parameters: Record<string, string>) => {
     ...(body === undefined ? [] : isForm ? [`  body: new URLSearchParams(${JSON.stringify(body)}).toString(),`] : [`  body: JSON.stringify(${JSON.stringify(body, null, 2).replace(/\n/g, '\n  ')}),`]),
   ].join('\n')
   const parse = api.parseResponse
-    ? `const text = await response.text();\nconst marker = 'Markdown Content:';\nconst parsed = text.trim().startsWith('{')\n  ? JSON.parse(text)\n  : JSON.parse(text.slice(text.indexOf(marker) + marker.length).trim());\nconst data = parsed?.data?.content ? JSON.parse(parsed.data.content) : parsed;`
+    ? `const contentType = response.headers.get('content-type') ?? '';\nconst data = contentType.startsWith('image/')\n  ? await response.blob()\n  : await response.text();`
     : 'const data = await response.json();'
   return `const response = await fetch('${url}', {\n${options}\n});\n\n${parse}`
 }
 
 const sidebarPreferenceKey = 'api-console.sidebar-collapsed'
 
-const classifyRequestError = (error: unknown): { message: string; errorType: RequestErrorKind; httpStatus?: number } => {
-  const candidate = typeof error === 'object' && error !== null
-    ? error as { name?: string; message?: string; httpStatus?: number; errorType?: RequestErrorKind }
-    : undefined
-  const httpStatus = candidate?.httpStatus
-  const isTimeout = candidate?.name === 'TimeoutError'
-  const errorType = candidate?.errorType
-    ?? (isTimeout ? 'timeout' : error instanceof TypeError ? 'network-or-cors' : 'unknown')
-  const message = isTimeout ? `The request timed out after ${REQUEST_TIMEOUT_MS / 1000} seconds.` : candidate?.message ?? 'The request failed.'
-  return { message, errorType, ...(httpStatus === undefined ? {} : { httpStatus }) }
-}
-
 const DEFAULT_HTTP_METHOD: NonNullable<ApiDemo['method']> = 'GET'
 const DEFAULT_RISK: NonNullable<ApiDemo['risk']> = 'Low'
 const KEYLESS_TAG_LABEL = 'no-key'
+const MACHINE_CATALOG_URL = `${import.meta.env.BASE_URL}api-catalog.json`
+const CATALOG_PAGE_SIZE = 50
 
 const pageMeta: Record<AdminPage, { title: string; subtitle: string; path: string }> = {
   overview: { title: 'Overview', subtitle: 'Explore the public API demo workspace', path: '/overview' },
@@ -259,9 +210,9 @@ function App() {
     return getDefaultParameters(initialApi)
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [request, setRequest] = useState<RequestState>({ status: 'idle' })
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState<string>('All')
+  const [catalogPage, setCatalogPage] = useState(1)
   const [mobileNav, setMobileNav] = useState(false)
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarPreference)
   const [viewport, setViewport] = useState(() => ({
@@ -271,14 +222,40 @@ function App() {
   const [detailOpen, setDetailOpen] = useState(() => !window.matchMedia('(max-width: 1180px)').matches)
   const [outputTab, setOutputTab] = useState<'response' | 'code'>('response')
   const [copied, setCopied] = useState(false)
-  const requestRunIdRef = useRef(0)
-  const requestAbortRef = useRef<AbortController | null>(null)
+  const selectedIdRef = useRef(selectedId)
+  const pageHeadingRef = useRef<HTMLHeadingElement | null>(null)
+  const previousPageRef = useRef(currentPage)
+  const mobileNavRef = useRef<HTMLElement | null>(null)
+  const mobileNavTriggerRef = useRef<HTMLButtonElement | null>(null)
+  const mobileCloseRef = useRef<HTMLButtonElement | null>(null)
+  const detailPanelRef = useRef<HTMLElement | null>(null)
+  const detailCloseRef = useRef<HTMLButtonElement | null>(null)
+  const detailTriggerRef = useRef<HTMLElement | null>(null)
+  selectedIdRef.current = selectedId
 
-  const cancelActiveRequest = useCallback(() => {
-    requestRunIdRef.current += 1
-    requestAbortRef.current?.abort(new DOMException('Request superseded.', 'AbortError'))
-    requestAbortRef.current = null
+  const { close: closeMobileNavigation } = useModalFocusTrap({
+    active: mobileNav,
+    containerRef: mobileNavRef,
+    initialFocusRef: mobileCloseRef,
+    returnFocusRef: mobileNavTriggerRef,
+    setOpen: setMobileNav,
+  })
+  const { close: closeDetailPanel, cancelRestore: cancelDetailFocusRestore } = useModalFocusTrap({
+    active: viewport.compact && detailOpen,
+    containerRef: detailPanelRef,
+    initialFocusRef: detailCloseRef,
+    returnFocusRef: detailTriggerRef,
+    setOpen: setDetailOpen,
+  })
+
+  const handleRequestStart = useCallback((api: ApiDemo, values: Record<string, string>) => {
+    setSelectedId(api.id)
+    setParameters(values)
   }, [])
+  const { request, runRequest, cancelActiveRequest, resetRequest } = useApiRequestRuntime({
+    onRunStart: handleRequestStart,
+    preloadResponsePreview: loadResponsePreview,
+  })
 
   const activeApi = apiCatalog.find((api) => api.id === selectedId) ?? apiCatalog[0]
   const activePage = pageMeta[currentPage]
@@ -286,20 +263,28 @@ function App() {
 
   const navigatePage = useCallback((page: AdminPage, replace = false, requestLabApiId?: string) => {
     const path = pageMeta[page].path
-    const hash = page === 'request-lab' ? buildRequestLabHash(requestLabApiId ?? selectedId) : `#${path}`
+    const hash = page === 'request-lab' ? buildRequestLabHash(requestLabApiId ?? selectedIdRef.current) : `#${path}`
     if (window.location.hash !== hash) {
       window.history[replace ? 'replaceState' : 'pushState']({}, '', `${import.meta.env.BASE_URL}${hash}`)
     }
     setCurrentPage(page)
     setMobileNav(false)
+    if (page !== 'catalog') {
+      cancelDetailFocusRestore()
+      setDetailOpen(false)
+    }
     window.scrollTo({ top: 0, behavior: 'auto' })
-  }, [selectedId])
+  }, [])
 
   useEffect(() => {
     const syncRoute = (canonicalizeRequestLab = false) => {
       const page = readPageFromLocation()
       setCurrentPage(page)
       setMobileNav(false)
+      if (page !== 'catalog') {
+        cancelDetailFocusRestore()
+        setDetailOpen(false)
+      }
       if (page !== 'request-lab') return
 
       const requestedId = readRequestLabApiId()
@@ -313,7 +298,7 @@ function App() {
       setSelectedId(requestedApi.id)
       setParameters(getDefaultParameters(requestedApi))
       setErrors({})
-      setRequest({ status: 'idle' })
+      resetRequest()
       setOutputTab('response')
     }
 
@@ -327,13 +312,17 @@ function App() {
       window.removeEventListener('popstate', handleRouteChange)
       window.removeEventListener('hashchange', handleRouteChange)
     }
-  }, [cancelActiveRequest, navigatePage, selectedId])
-
-  useEffect(() => () => cancelActiveRequest(), [cancelActiveRequest])
+  }, [cancelActiveRequest, navigatePage, resetRequest, selectedId])
 
   useEffect(() => {
     document.title = `${activePage.title} — Public API Admin`
   }, [activePage.title])
+
+  useEffect(() => {
+    if (previousPageRef.current === currentPage) return
+    previousPageRef.current = currentPage
+    pageHeadingRef.current?.focus({ preventScroll: true })
+  }, [currentPage])
 
   useEffect(() => {
     const compactQuery = window.matchMedia('(max-width: 1180px)')
@@ -359,20 +348,6 @@ function App() {
     }
   }, [sidebarCollapsed])
 
-  useEffect(() => {
-    if (!mobileNav) return
-    const previousOverflow = document.body.style.overflow
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') setMobileNav(false)
-    }
-    document.body.style.overflow = 'hidden'
-    window.addEventListener('keydown', closeOnEscape)
-    return () => {
-      document.body.style.overflow = previousOverflow
-      window.removeEventListener('keydown', closeOnEscape)
-    }
-  }, [mobileNav])
-
   const filteredApis = useMemo(() => {
     const needle = query.trim().toLowerCase()
     return apiCatalog.filter((api) => {
@@ -381,6 +356,12 @@ function App() {
       return matchesCategory && matchesSearch
     })
   }, [category, query])
+  const catalogPageCount = Math.max(1, Math.ceil(filteredApis.length / CATALOG_PAGE_SIZE))
+  const visibleCatalogPage = Math.min(catalogPage, catalogPageCount)
+  const catalogPageStart = (visibleCatalogPage - 1) * CATALOG_PAGE_SIZE
+  const visibleCatalogApis = filteredApis.slice(catalogPageStart, catalogPageStart + CATALOG_PAGE_SIZE)
+  const catalogRangeStart = filteredApis.length ? catalogPageStart + 1 : 0
+  const catalogRangeEnd = Math.min(catalogPageStart + visibleCatalogApis.length, filteredApis.length)
 
   const navigateSection = useCallback((section: AdminSection) => {
     navigatePage(section)
@@ -388,9 +369,15 @@ function App() {
 
   const filterCatalog = useCallback((nextQuery: string, nextCategory: string) => {
     navigatePage('catalog')
+    setCatalogPage(1)
     setQuery(nextQuery)
     if (categories.includes(nextCategory as (typeof categories)[number])) setCategory(nextCategory)
   }, [navigatePage])
+
+  const rememberDetailTrigger = () => {
+    if (!viewport.compact || detailOpen) return
+    if (document.activeElement instanceof HTMLElement) detailTriggerRef.current = document.activeElement
+  }
 
   const selectApi = useCallback((id: string, openOnMobile = true) => {
     const api = apiCatalog.find((candidate) => candidate.id === id)
@@ -399,62 +386,36 @@ function App() {
     setSelectedId(id)
     setParameters(getDefaultParameters(api))
     setErrors({})
-    setRequest({ status: 'idle' })
+    resetRequest()
     setOutputTab('response')
     if (openOnMobile) setDetailOpen(true)
-  }, [cancelActiveRequest])
+  }, [cancelActiveRequest, resetRequest])
 
-  const runForAgent = useCallback(async (api: ApiDemo, values: Record<string, string>) => {
-    const nextErrors = validateParameters(api, values)
-    if (Object.keys(nextErrors).length) throw new Error(Object.values(nextErrors).join(' '))
-    cancelActiveRequest()
-    const runId = requestRunIdRef.current
-    const controller = new AbortController()
-    requestAbortRef.current = controller
-    const timeoutId = window.setTimeout(() => {
-      controller.abort(new DOMException('Request timed out.', 'TimeoutError'))
-    }, REQUEST_TIMEOUT_MS)
-    setSelectedId(api.id)
-    setParameters(values)
-    setRequest({ status: 'loading' })
-    void loadResponsePreview()
-    try {
-      const result = await fetchApi(api, values, controller.signal)
-      if (runId === requestRunIdRef.current) setRequest({ status: 'success', ...result })
-      return result.data
-    } catch (error) {
-      if (runId === requestRunIdRef.current) {
-        const classified = classifyRequestError(error)
-        setRequest({ status: 'error', ...classified, url: api.buildUrl(values) })
-      }
-      throw error
-    } finally {
-      window.clearTimeout(timeoutId)
-      if (requestAbortRef.current === controller) requestAbortRef.current = null
-    }
-  }, [cancelActiveRequest])
 
   const selectApiForAgent = useCallback((id: string) => {
     selectApi(id, false)
     navigatePage('request-lab', false, id)
   }, [navigatePage, selectApi])
 
-  const webMcpStatus = useWebMcp({ onSelectApi: selectApiForAgent, onRunApi: runForAgent, onNavigate: navigateSection, onFilter: filterCatalog })
+  const webMcpStatus = useWebMcp({ onSelectApi: selectApiForAgent, onRunApi: runRequest, onNavigate: navigateSection, onFilter: filterCatalog })
   const endpoint = activeApi.buildUrl(parameters)
+  const agentExecutionPolicy = getAgentExecutionPolicy(activeApi)
+  const automatedVerificationPolicy = getAutomatedVerificationPolicy(activeApi)
+  const agentExecutionNoteId = `agent-execution-policy-${activeApi.id}`
 
   const executeRequest = useCallback(async (api: ApiDemo, values: Record<string, string>) => {
     const nextErrors = validateParameters(api, values)
     setErrors(nextErrors)
     setOutputTab('response')
     if (Object.keys(nextErrors).length) return false
-    await runForAgent(api, values).catch(() => undefined)
+    await runRequest(api, values).catch(() => undefined)
     return true
-  }, [runForAgent])
+  }, [runRequest])
 
   const updateParameter = (fieldId: string, value: string) => {
     cancelActiveRequest()
     setParameters((current) => ({ ...current, [fieldId]: value }))
-    if (request.status !== 'idle') setRequest({ status: 'idle' })
+    if (request.status !== 'idle') resetRequest()
     setOutputTab('response')
   }
 
@@ -481,8 +442,9 @@ function App() {
   }
 
   const trySelectedApi = () => {
-    setDetailOpen(false)
+    closeDetailPanel(false)
     navigatePage('request-lab', false, activeApi.id)
+    if (agentExecutionPolicy.mode === 'manual-only') return
     void executeRequest(activeApi, parameters)
   }
 
@@ -503,21 +465,21 @@ function App() {
 
   return (
     <div className={`admin-shell ${currentPage === 'catalog' ? 'has-detail' : ''} ${sidebarCollapsed ? 'sidebar-collapsed' : ''}`}>
-      <aside id="primary-navigation" className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`} aria-label="Primary navigation" aria-hidden={viewport.mobile && !mobileNav} inert={viewport.mobile && !mobileNav ? true : undefined}>
+      <aside ref={mobileNavRef} id="primary-navigation" className={`sidebar ${sidebarCollapsed ? 'collapsed' : ''} ${mobileNav ? 'mobile-open' : ''}`} role={viewport.mobile && mobileNav ? 'dialog' : undefined} aria-modal={viewport.mobile && mobileNav ? 'true' : undefined} aria-label="Primary navigation" aria-hidden={viewport.mobile && !mobileNav} inert={(viewport.mobile && !mobileNav) || (viewport.compact && detailOpen) ? true : undefined}>
         <div className="sidebar-brand">
           <button
             className="sidebar-brand-toggle"
             type="button"
-            onClick={() => viewport.mobile ? setMobileNav(false) : setSidebarCollapsed((current) => !current)}
+            onClick={() => viewport.mobile ? closeMobileNavigation() : setSidebarCollapsed((current) => !current)}
             aria-controls="primary-navigation"
             aria-expanded={viewport.mobile ? mobileNav : !sidebarCollapsed}
-            aria-label={viewport.mobile ? 'Close navigation' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-            title={viewport.mobile ? 'Close navigation' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            aria-label={viewport.mobile ? 'Close navigation from API Console brand' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={viewport.mobile ? 'Close navigation from API Console brand' : sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
           >
             <span className="logo-cube"><i /></span>
             <span className="sidebar-brand-copy"><b>API Console</b><small>Govern • Discover • Operate</small></span>
           </button>
-          <button className="mobile-close" type="button" onClick={() => setMobileNav(false)} aria-label="Close navigation"><Icon name="x" /></button>
+          <button ref={mobileCloseRef} className="mobile-close" type="button" onClick={() => closeMobileNavigation(true)} aria-label="Close navigation menu"><Icon name="x" /></button>
         </div>
         <nav aria-label="Admin navigation">
           {navGroups.map((group, index) => (
@@ -545,12 +507,12 @@ function App() {
         <div className="sidebar-version">API Console v1.0.0</div>
       </aside>
 
-      {mobileNav && <button className="nav-scrim" type="button" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
+      {mobileNav && <button className="nav-scrim" type="button" tabIndex={-1} aria-hidden="true" onClick={() => closeMobileNavigation(true)} />}
 
-      <div className="admin-main">
+      <div className="admin-main" inert={mobileNav || (viewport.compact && detailOpen) ? true : undefined}>
         <header className="topbar">
-          <button className="menu-button" type="button" onClick={() => setMobileNav(true)} aria-label="Open navigation" aria-controls="primary-navigation" aria-expanded={mobileNav}><Icon name="menu" /></button>
-          <div className="page-title"><h1>{activePage.title}</h1><p>{activePage.subtitle}</p></div>
+          <button ref={mobileNavTriggerRef} className="menu-button" type="button" onClick={() => setMobileNav(true)} aria-label="Open navigation" aria-controls="primary-navigation" aria-expanded={mobileNav}><Icon name="menu" /></button>
+          <div className="page-title"><h1 ref={pageHeadingRef} tabIndex={-1}>{activePage.title}</h1><p>{activePage.subtitle}</p></div>
           <button className="icon-button" type="button" aria-label="Help" onClick={() => navigatePage('documentation')}><Icon name="help" /></button>
         </header>
 
@@ -588,16 +550,16 @@ function App() {
               <div className={`agent-connection ${webMcpStatus}`}><i /><span>{webMcpStatus === 'ready' ? 'Agent connected' : webMcpStatus === 'unsupported' ? 'Browser preview' : webMcpStatus === 'error' ? 'Agent unavailable' : 'Checking WebMCP'}</span></div>
             </div>
             <div className="catalog-toolbar">
-              <label className="module-search"><Icon name="search" size={16} /><span className="sr-only">Search catalog</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search by name, description, or provider…" /></label>
-              <select aria-label="Filter by category" value={category} onChange={(event) => setCategory(event.target.value)}>{categories.map((item) => <option value={item} key={item}>{item === 'All' ? 'All categories' : item}</option>)}</select>
-              <span className="result-count">{filteredApis.length} APIs</span>
+              <label className="module-search"><Icon name="search" size={16} /><span className="sr-only">Search catalog</span><input value={query} onChange={(event) => { setQuery(event.target.value); setCatalogPage(1) }} placeholder="Search by name, description, or provider…" /></label>
+              <select aria-label="Filter by category" value={category} onChange={(event) => { setCategory(event.target.value); setCatalogPage(1) }}>{categories.map((item) => <option value={item} key={item}>{item === 'All' ? 'All categories' : item}</option>)}</select>
+              <span className="result-count" aria-live="polite">{filteredApis.length} APIs</span>
             </div>
 
             <div className="table-wrap">
               <table>
                 <thead><tr><th aria-label="Selection" /><th>API</th><th>Provider / Source</th><th>Risk</th><th>Tags</th></tr></thead>
                 <tbody>
-                  {filteredApis.map((api) => (
+                  {visibleCatalogApis.map((api) => (
                     <tr
                       className={api.id === selectedId ? 'selected' : ''}
                       key={api.id}
@@ -605,11 +567,14 @@ function App() {
                       data-category={api.category}
                       data-provider={api.provider}
                       data-http-method={api.method ?? DEFAULT_HTTP_METHOD}
+                      data-agent-execution={getAgentExecutionPolicy(api).mode}
+                      data-automated-verification={api.automatedVerification?.mode ?? 'enabled'}
+                      data-verification-minimum-interval-seconds={api.automatedVerification?.minimumIntervalSeconds}
                       data-selected={api.id === selectedId ? 'true' : 'false'}
                     >
-                      <td><input type="radio" name="selected-api" checked={api.id === selectedId} onChange={() => selectApi(api.id)} aria-label={`Select ${api.name}`} /></td>
-                      <td data-label="API"><button className="api-identity" type="button" onClick={() => selectApi(api.id)}><span style={{ '--api-color': api.accent } as React.CSSProperties}>{api.monogram}</span><div><b>{api.name}</b><small>{api.description}</small></div></button></td>
-                      <td data-label="Provider"><div className="provider-cell"><b>{api.provider}</b><a href={api.documentationUrl} target="_blank" rel="noreferrer">Documentation <Icon name="external" size={11} /></a></div></td>
+                      <td><input type="radio" name="selected-api" checked={api.id === selectedId} onChange={() => { rememberDetailTrigger(); selectApi(api.id) }} aria-label={`Select ${api.name}`} /></td>
+                      <td data-label="API"><button className="api-identity" type="button" onClick={() => { rememberDetailTrigger(); selectApi(api.id) }}><span style={{ '--api-color': api.accent } as React.CSSProperties}>{api.monogram}</span><div><b>{api.name}</b><small>{api.description}</small></div></button></td>
+                      <td data-label="Provider"><div className="provider-cell"><b>{api.provider}</b><a href={api.documentationUrl} target="_blank" rel="noreferrer" aria-label={`Open ${api.name} documentation`} data-api-docs-for={api.id}>Documentation <Icon name="external" size={11} /></a></div></td>
                       <td data-label="Risk"><span className="risk"><Icon name="shield" size={14} /> {api.risk ?? DEFAULT_RISK}</span></td>
                       <td data-label="Tags"><div className="tags"><span className="tag blue">{KEYLESS_TAG_LABEL}</span><span className="tag green">{api.method ?? DEFAULT_HTTP_METHOD}</span><span className="tag plain">{api.category}</span></div></td>
                     </tr>
@@ -618,29 +583,30 @@ function App() {
               </table>
               {filteredApis.length === 0 && <div className="catalog-empty"><Icon name="search" /><b>No matching APIs</b><p>Clear the search or choose another category.</p></div>}
             </div>
-            <div className="table-footer"><span>Showing {filteredApis.length} of {apiCatalog.length} APIs</span><div><button type="button" disabled aria-label="Previous page">‹</button><span className="current" aria-current="page">1</span><button type="button" disabled aria-label="Next page">›</button></div></div>
+            <div className="table-footer" data-catalog-page={visibleCatalogPage} data-page-count={catalogPageCount} data-page-size={CATALOG_PAGE_SIZE}><span>Showing {catalogRangeStart}–{catalogRangeEnd} of {filteredApis.length} matching APIs · {apiCatalog.length} total</span><div aria-label="Catalog pagination"><button type="button" disabled={visibleCatalogPage <= 1} aria-label="Previous catalog page" onClick={() => setCatalogPage((page) => Math.max(1, page - 1))}>‹</button><span className="current" aria-current="page" aria-label={`Page ${visibleCatalogPage} of ${catalogPageCount}`}>{visibleCatalogPage}</span><button type="button" disabled={visibleCatalogPage >= catalogPageCount} aria-label="Next catalog page" onClick={() => setCatalogPage((page) => Math.min(catalogPageCount, page + 1))}>›</button></div></div>
           </section>}
 
-          {currentPage === 'request-lab' && <section className={`request-lab page-section ${request.status === 'success' ? 'has-ssot-result' : ''}`} aria-labelledby="lab-heading" data-api-id={activeApi.id} data-request-state={request.status}>
+          {currentPage === 'request-lab' && <section className={`request-lab page-section ${request.status === 'success' ? 'has-ssot-result' : ''}`} aria-labelledby="lab-heading" data-api-id={activeApi.id} data-request-state={request.status} data-agent-execution={agentExecutionPolicy.mode} data-automated-verification={automatedVerificationPolicy.mode} data-verification-minimum-interval-seconds={automatedVerificationPolicy.mode === 'cadence-limited' ? automatedVerificationPolicy.minimumIntervalSeconds : undefined}>
             <div className="section-title"><span><Icon name="activity" /></span><div><h2 id="lab-heading">Request lab</h2><p>Run the selected public API, review its SSOT card, then inspect raw JSON or fetch code when needed.</p></div></div>
             {request.status === 'success' && <Suspense fallback={<div className="response-preview-loading" role="status" aria-live="polite">Preparing semantic API preview…</div>}><LazyResponseDemoPreview api={activeApi} data={request.data} requestUrl={request.url} runtime={{ httpStatus: request.httpStatus, elapsed: request.elapsed, size: request.size }} /></Suspense>}
             <div className="lab-grid">
-              <form className="parameter-card" aria-label={`Configure ${activeApi.name}`} data-api-id={activeApi.id} onSubmit={submitRequest} noValidate>
+              <form className="parameter-card" aria-label={`Configure ${activeApi.name}`} data-api-id={activeApi.id} data-agent-execution={agentExecutionPolicy.mode} onSubmit={submitRequest} noValidate>
                 <div className="active-api"><span style={{ '--api-color': activeApi.accent } as React.CSSProperties}>{activeApi.monogram}</span><div><small>Selected module</small><b>{activeApi.name}</b></div><a href={activeApi.documentationUrl} target="_blank" rel="noreferrer">Docs <Icon name="external" size={12} /></a></div>
+                {agentExecutionPolicy.mode === 'manual-only' && <aside id={agentExecutionNoteId} className="agent-policy-note" aria-label="Agent execution restriction"><Icon name="shield" size={17} /><div><b>Interactive use only</b><p>{agentExecutionPolicy.reason}</p>{agentExecutionPolicy.policyUrl && <a href={agentExecutionPolicy.policyUrl} target="_blank" rel="noreferrer">Provider policy <Icon name="external" size={11} /></a>}</div></aside>}
                 <div className="endpoint-box"><span>{activeApi.method ?? DEFAULT_HTTP_METHOD}</span><code>{endpoint}</code></div>
                 <div className="parameter-heading"><b>Parameters</b><small>{activeApi.fields.length ? `${activeApi.fields.length} required` : 'No input required'}</small></div>
                 <div className="parameter-fields">
                   {activeApi.fields.map((field) => (
                     <label key={field.id} htmlFor={`parameter-${field.id}`}><span>{field.label}<em>required</em></span>
-                      {field.type === 'select' ? <select id={`parameter-${field.id}`} name={field.id} value={parameters[field.id] ?? ''} aria-label={field.label} aria-required="true" aria-invalid={Boolean(errors[field.id])} aria-describedby={`parameter-${field.id}-help`} onChange={(event) => updateParameter(field.id, event.target.value)}>{field.options?.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select> : <input id={`parameter-${field.id}`} name={field.id} type={field.type} min={field.min} max={field.max} value={parameters[field.id] ?? ''} placeholder={field.placeholder} aria-label={field.label} aria-required="true" aria-invalid={Boolean(errors[field.id])} aria-describedby={`parameter-${field.id}-help`} onChange={(event) => updateParameter(field.id, event.target.value)} />}
+                      {field.type === 'select' ? <select id={`parameter-${field.id}`} name={field.id} value={parameters[field.id] ?? ''} aria-label={field.label} aria-required="true" aria-invalid={Boolean(errors[field.id])} aria-describedby={`parameter-${field.id}-help`} onChange={(event) => updateParameter(field.id, event.target.value)}>{field.options?.map((option) => <option value={option.value} key={option.value}>{option.label}</option>)}</select> : <input id={`parameter-${field.id}`} name={field.id} type={field.type} min={field.type === 'number' ? field.min : undefined} max={field.type === 'number' ? field.max : undefined} minLength={field.type === 'text' ? field.minLength : undefined} maxLength={field.type === 'text' ? field.maxLength : undefined} value={parameters[field.id] ?? ''} placeholder={field.placeholder} aria-label={field.label} aria-required="true" aria-invalid={Boolean(errors[field.id])} aria-describedby={`parameter-${field.id}-help`} onChange={(event) => updateParameter(field.id, event.target.value)} />}
                       <small id={`parameter-${field.id}-help`} className={errors[field.id] ? 'error' : ''}>{errors[field.id] ?? field.help}</small>
                     </label>
                   ))}
                 </div>
-                <button className="primary-action" type="submit" disabled={request.status === 'loading'}>{request.status === 'loading' ? <span className="spinner" /> : <Icon name="play" size={16} />}{request.status === 'loading' ? 'Running request…' : 'Try live API'}</button>
+                <button className="primary-action" type="submit" disabled={request.status === 'loading'} data-agent-execution={agentExecutionPolicy.mode} aria-describedby={agentExecutionPolicy.mode === 'manual-only' ? agentExecutionNoteId : undefined}>{request.status === 'loading' ? <span className="spinner" /> : <Icon name="play" size={16} />}{request.status === 'loading' ? 'Running request…' : 'Try live API'}</button>
               </form>
               <div className="response-card" role="region" aria-label={`${activeApi.name} request output`} data-api-id={activeApi.id} data-request-state={request.status} data-error-type={request.status === 'error' ? request.errorType : undefined}>
-                <div className="response-head"><div role="tablist" aria-label="Request output"><button id="request-output-response-tab" data-output-tab="response" role="tab" aria-controls="request-output-panel" aria-selected={outputTab === 'response'} tabIndex={outputTab === 'response' ? 0 : -1} type="button" onClick={() => setOutputTab('response')} onKeyDown={handleOutputTabKeyDown}>Raw JSON</button><button id="request-output-code-tab" data-output-tab="code" role="tab" aria-controls="request-output-panel" aria-selected={outputTab === 'code'} tabIndex={outputTab === 'code' ? 0 : -1} type="button" onClick={() => setOutputTab('code')} onKeyDown={handleOutputTabKeyDown}>Fetch code</button></div>{request.status === 'success' && <span className="response-meta"><b>{request.httpStatus} OK</b>{request.elapsed} ms · {formatBytes(request.size)}</span>}<button type="button" className="copy-output" onClick={copyOutput}><Icon name={copied ? 'check' : 'copy'} size={14} />{copied ? 'Copied' : outputTab === 'code' ? 'Copy code' : 'Copy JSON'}</button></div>
+                <div className="response-head"><div role="tablist" aria-label="Request output"><button id="request-output-response-tab" data-output-tab="response" role="tab" aria-controls="request-output-panel" aria-selected={outputTab === 'response'} tabIndex={outputTab === 'response' ? 0 : -1} type="button" onClick={() => setOutputTab('response')} onKeyDown={handleOutputTabKeyDown}>Raw JSON</button>{agentExecutionPolicy.mode === 'enabled' && <button id="request-output-code-tab" data-output-tab="code" role="tab" aria-controls="request-output-panel" aria-selected={outputTab === 'code'} tabIndex={outputTab === 'code' ? 0 : -1} type="button" onClick={() => setOutputTab('code')} onKeyDown={handleOutputTabKeyDown}>Fetch code</button>}</div>{request.status === 'success' && <span className="response-meta"><b>{request.httpStatus} OK</b>{request.elapsed} ms · {formatBytes(request.size)}</span>}<button type="button" className="copy-output" onClick={copyOutput}><Icon name={copied ? 'check' : 'copy'} size={14} />{copied ? 'Copied' : outputTab === 'code' ? 'Copy code' : 'Copy JSON'}</button></div>
                 <div id="request-output-panel" className="response-body" role="tabpanel" aria-labelledby={outputTab === 'response' ? 'request-output-response-tab' : 'request-output-code-tab'} tabIndex={0} aria-live="polite">
                   {outputTab === 'code' ? <pre>{codeSample(activeApi, parameters)}</pre> : request.status === 'idle' ? <div className="response-empty"><span><Icon name="play" /></span><b>Ready to test</b><p>Configure the parameters and run this API.</p></div> : request.status === 'loading' ? <div className="response-empty"><span><Icon name="activity" /></span><b>Contacting {activeApi.provider}</b><p>Waiting for the public endpoint…</p></div> : request.status === 'error' ? <div className="response-error" role="alert" aria-label={`Request failed: ${request.errorType}`} data-error-type={request.errorType} data-http-status={request.httpStatus}><Icon name="alert" /><b>Request failed</b><p>{request.message}</p><small className="sr-only">Error type: {request.errorType}{request.httpStatus ? `; HTTP ${request.httpStatus}` : ''}</small></div> : <pre>{JSON.stringify(request.data, null, 2)}</pre>}
                 </div>
@@ -649,7 +615,7 @@ function App() {
           </section>}
 
           {currentPage === 'agent-tools' && <section className="agent-section page-section" aria-labelledby="agent-heading">
-            <div className="agent-intro"><span className="agent-hero-icon"><Icon name="agent" size={26} /></span><p className="eyebrow">WebMCP control layer</p><h2 id="agent-heading">Built for people.<br />Operable by AI agents.</h2><p>The same actions a person performs in this console are exposed as typed browser tools. Agent actions update the visible interface, preserving shared context and user control.</p><div className={`webmcp-state ${webMcpStatus}`}><i /><div><b>{webMcpStatus === 'ready' ? 'WebMCP tools registered' : webMcpStatus === 'unsupported' ? 'WebMCP preview not available in this browser' : 'Checking WebMCP support'}</b><small>The admin console remains fully usable without agent support.</small></div></div></div>
+            <div className="agent-intro"><span className="agent-hero-icon"><Icon name="agent" size={26} /></span><p className="eyebrow">WebMCP control layer</p><h2 id="agent-heading">Built for people.<br />Operable by AI agents.</h2><p>Catalog and navigation actions are exposed as typed browser tools. Live execution reuses the same request SSOT but respects provider automation policies, while agent actions keep the visible interface synchronized.</p><div className={`webmcp-state ${webMcpStatus}`}><i /><div><b>{webMcpStatus === 'ready' ? 'WebMCP tools registered' : webMcpStatus === 'unsupported' ? 'WebMCP preview not available in this browser' : 'Checking WebMCP support'}</b><small>The admin console remains fully usable without agent support.</small></div></div><a className="machine-catalog-link" href={MACHINE_CATALOG_URL} data-agent-catalog="api-catalog-json"><Icon name="code" size={15} /><span><b>Machine-readable API catalog</b><small>JSON · generated from the same API SSOT</small></span><Icon name="external" size={12} /></a></div>
             <div className="tool-list">
               {WEBMCP_TOOL_UI_LIST.map(([name, description, type], index) => <article key={name}><span>0{index + 1}</span><div><code>{name}</code><p>{description}</p></div><em>{type}</em><Icon name="check" /></article>)}
             </div>
@@ -673,15 +639,16 @@ function App() {
         </main>
       </div>
 
-      {currentPage === 'catalog' && <aside className={`detail-panel ${detailOpen ? 'mobile-open' : ''}`} aria-label="Selected API details" aria-hidden={viewport.compact && !detailOpen} inert={viewport.compact && !detailOpen ? true : undefined}>
-        <div className="detail-head"><span>Selected module</span><button type="button" onClick={() => setDetailOpen(false)} aria-label="Close details"><Icon name="x" /></button></div>
+      {currentPage === 'catalog' && viewport.compact && detailOpen && <div className="detail-scrim" aria-hidden="true" onClick={() => closeDetailPanel(true)} />}
+      {currentPage === 'catalog' && <aside ref={detailPanelRef} className={`detail-panel ${detailOpen ? 'mobile-open' : ''}`} role={viewport.compact && detailOpen ? 'dialog' : undefined} aria-modal={viewport.compact && detailOpen ? 'true' : undefined} aria-label={viewport.compact && detailOpen ? `${activeApi.name} details` : 'Selected API details'} aria-hidden={viewport.compact && !detailOpen} inert={mobileNav || (viewport.compact && !detailOpen) ? true : undefined} data-api-id={activeApi.id} data-agent-execution={agentExecutionPolicy.mode} data-automated-verification={automatedVerificationPolicy.mode} data-verification-minimum-interval-seconds={automatedVerificationPolicy.mode === 'cadence-limited' ? automatedVerificationPolicy.minimumIntervalSeconds : undefined}>
+        <div className="detail-head"><span>Selected module</span>{viewport.compact && <button ref={detailCloseRef} type="button" onClick={() => closeDetailPanel(true)} aria-label="Close selected API details"><Icon name="x" /></button>}</div>
         <div className="detail-title"><span style={{ '--api-color': activeApi.accent } as React.CSSProperties}>{activeApi.monogram}</span><div><h2>{activeApi.name}</h2><small>DEMO PICK</small></div></div>
         <p className="detail-description">{activeApi.description}</p>
         <div className="detail-tags"><span className="tag green">Curated demo</span><span className="tag blue">{KEYLESS_TAG_LABEL}</span><span className={`tag ${activeApi.risk === 'Review' ? 'plain' : 'green'}`}>{activeApi.risk ?? DEFAULT_RISK} risk</span><span className="tag plain">{activeApi.category}</span></div>
-        <section className="detail-box"><div className="box-title"><span>Catalog contract & source</span><b>{activeApi.risk ?? DEFAULT_RISK} risk</b></div><dl><div><dt>Source host</dt><dd>{new URL(activeApi.documentationUrl).hostname}</dd></div><div><dt>Documentation</dt><dd>linked</dd></div><div><dt>Live health</dt><dd>Check in Request Lab</dd></div><div><dt>Attribution</dt><dd>Review provider documentation</dd></div></dl></section>
+        <section className="detail-box"><div className="box-title"><span>Catalog contract & source</span><b>{activeApi.risk ?? DEFAULT_RISK} risk</b></div><dl><div><dt>Source host</dt><dd>{new URL(activeApi.documentationUrl).hostname}</dd></div><div><dt>Documentation</dt><dd>linked</dd></div><div><dt>Live health</dt><dd>Check in Request Lab</dd></div><div><dt>Agent execution</dt><dd>{agentExecutionPolicy.mode === 'manual-only' ? 'Manual-only provider policy' : 'Available in WebMCP'}</dd></div><div><dt>Attribution</dt><dd>Review provider documentation</dd></div></dl></section>
         <section className="detail-box"><div className="box-title"><span>Usage / licence</span><b>Review terms</b></div><p><small>Important notes</small>{activeApi.usageNote ?? 'Suitable for demonstration and internal prototyping. Review the provider terms before production use.'}</p><a href={activeApi.documentationUrl} target="_blank" rel="noreferrer">Open official documentation <Icon name="external" size={12} /></a></section>
         <section className="detail-box endpoint-detail"><div className="box-title"><span>Endpoint</span><b>{activeApi.method ?? DEFAULT_HTTP_METHOD}</b></div><code>{endpoint}</code></section>
-        <div className="detail-actions"><button className="primary-action" type="button" onClick={trySelectedApi}><Icon name="play" size={15} /> Try live API</button><button type="button" onClick={copyFetch}><Icon name="code" size={15} /> Copy fetch</button></div>
+        <div className="detail-actions"><button className="primary-action" type="button" onClick={trySelectedApi} data-agent-execution={agentExecutionPolicy.mode}>{agentExecutionPolicy.mode === 'manual-only' ? <><Icon name="activity" size={15} /> Open interactive Request Lab</> : <><Icon name="play" size={15} /> Try live API</>}</button>{agentExecutionPolicy.mode === 'enabled' && <button type="button" onClick={copyFetch}><Icon name="code" size={15} /> Copy fetch</button>}</div>
       </aside>}
     </div>
   )

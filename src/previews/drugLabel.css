@@ -1,0 +1,21 @@
+.drug-label-preview { min-width: 0; color: #203149; font-size: 14px; line-height: 1.55; }
+.drug-label-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.drug-label-heading > div { min-width: 0; }
+.drug-label-heading small, .drug-label-sections small { color: #66758a; font-size: 10px; font-weight: 750; letter-spacing: .07em; text-transform: uppercase; }
+.drug-label-heading h3 { margin: 4px 0 0; color: #1d2f49; font-size: clamp(22px, 3cqi, 28px); line-height: 1.25; overflow-wrap: anywhere; }
+.drug-label-heading p { margin: 5px 0 0; color: #53657d; font-weight: 650; overflow-wrap: anywhere; }
+.drug-label-heading > span { flex: 0 0 auto; padding: 6px 9px; border: 1px solid #c8d7e8; border-radius: 999px; background: #f3f7fb; color: #4f647d; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.drug-label-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(155px, 100%), 1fr)); gap: 12px; margin: 0 0 16px; }
+.drug-label-facts > div { min-width: 0; padding: 12px; border: 1px solid #dce5ef; border-radius: 10px; background: #fff; }
+.drug-label-facts dt { color: #66758a; font-size: 11px; }
+.drug-label-facts dd { margin: 4px 0 0; color: #21344e; font-weight: 650; overflow-wrap: anywhere; }
+.drug-label-sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.drug-label-sections article { min-width: 0; padding: 15px; border: 1px solid #dce5ef; border-radius: 11px; background: #fff; }
+.drug-label-sections h4 { margin: 4px 0 8px; color: #1f3654; font-size: 16px; }
+.drug-label-sections p { margin: 0; color: #4d5f75; overflow-wrap: anywhere; }
+.drug-label-note { margin: 14px 0 0; padding: 12px 14px; border-left: 3px solid #879bb3; background: #f4f7fa; color: #56677c; font-size: 12px; line-height: 1.6; }
+@container (max-width: 620px) {
+  .drug-label-heading { flex-wrap: wrap; }
+  .drug-label-heading > span { white-space: normal; }
+  .drug-label-sections { grid-template-columns: 1fr; }
+}
