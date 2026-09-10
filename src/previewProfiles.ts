@@ -3,6 +3,29 @@ export type PreviewLayout =
   | 'grammar-review'
   | 'vehicle-recalls'
   | 'color-swatch'
+  | 'carbon-intensity'
+  | 'terrain-elevation'
+  | 'flood-stations'
+  | 'water-gauge'
+  | 'population-statistic'
+  | 'refugee-population'
+  | 'household-income'
+  | 'population-total'
+  | 'humanitarian-events'
+  | 'sdg-goals'
+  | 'satellite-orbits'
+  | 'marine-occurrences'
+  | 'marine-taxonomy'
+  | 'fossil-taxon'
+  | 'ip-geolocation'
+  | 'boundary-layer'
+  | 'f1-season-catalog'
+  | 'pro-match-results'
+  | 'football-matchday'
+  | 'baseball-schedule'
+  | 'disaster-declared-areas'
+  | 'core-cpi-index'
+  | 'food-hygiene-ratings'
   | 'dns-records'
   | 'download-summary'
   | 'release-lifecycle'
@@ -43,7 +66,20 @@ export type PreviewLayout =
   | 'motorsport-results'
   | 'quote-card'
   | 'character-dossier'
-  | 'data-table'
+  | 'federal-agency-overview'
+  | 'federal-awards'
+  | 'knowledge-entities'
+  | 'citation-count'
+  | 'parliament-members'
+  | 'ai-model-catalog'
+  | 'open-data-catalog'
+  | 'icon-catalog'
+  | 'homebrew-package'
+  | 'monster-statblock'
+  | 'lexical-matches'
+  | 'symbolic-math'
+  | 'public-ip'
+  | 'cat-fact'
   | 'fuel-dashboard'
   | 'marine-forecast'
   | 'awards-timeline'
@@ -71,7 +107,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['nasa-eonet-events', 'natural-events', 'NASA Earth event monitor'],
   ['mbta-transit-routes', 'transit-board', 'Boston transit route board'],
   ['open-trivia', 'trivia-game', 'Interactive trivia question deck'],
-  ['carbon-intensity-gb', 'data-table', 'Great Britain carbon gauge'],
+  ['carbon-intensity-gb', 'carbon-intensity', 'Great Britain carbon intensity'],
   ['data-gov-24hr-forecast', 'weather-dashboard', 'Singapore 24-hour outlook'],
   ['data-gov-4day-forecast', 'weather-dashboard', 'Singapore four-day planner'],
   ['data-gov-air-temperature', 'weather-dashboard', 'Temperature station network'],
@@ -88,10 +124,10 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['data-gov-wind-speed', 'weather-dashboard', 'Wind speed station dashboard'],
   ['data-usa', 'market-chart', 'United States population explorer'],
   ['devto', 'developer-feed', 'DEV article discovery feed'],
-  ['fiscal-data-treasury', 'data-table', 'U.S. Treasury agency profile'],
+  ['fiscal-data-treasury', 'federal-agency-overview', 'U.S. Treasury agency overview'],
   ['github', 'developer-feed', 'GitHub repository command center'],
   ['hacker-news', 'developer-feed', 'Hacker News story brief'],
-  ['ipify-public-ip', 'data-table', 'Public IP network card'],
+  ['ipify-public-ip', 'public-ip', 'Public IP network identity'],
   ['met-museum-object-detail', 'media-gallery', 'Museum object spotlight'],
   ['met-museum-search', 'collection-index', 'Met collection search index'],
   ['nhtsa-vpic', 'manufacturer-directory', 'Vehicle manufacturer registry'],
@@ -105,11 +141,11 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['pypi-json', 'developer-feed', 'Python package release profile'],
   ['stack-exchange', 'developer-feed', 'Stack Overflow activity queue'],
   ['uk-bank-holidays', 'calendar-timeline', 'UK bank holiday calendar'],
-  ['usaspending', 'data-table', 'Federal award spending ledger'],
+  ['usaspending', 'federal-awards', 'Federal contract award ledger'],
   ['usgs', 'location-map', 'Earthquake activity map'],
-  ['wikidata-sparql', 'data-table', 'Wikidata query result table'],
+  ['wikidata-sparql', 'knowledge-entities', 'Wikidata entity bindings'],
   ['openssf-scorecard', 'security-scorecard', 'Repository security check evidence'],
-  ['opencitations-index', 'data-table', 'Incoming citation count'],
+  ['opencitations-index', 'citation-count', 'OpenCitations incoming citation count'],
   ['vam-collections', 'media-gallery', 'V&A objects collection search'],
   ['world-bank-gdp', 'market-chart', 'Singapore GDP history'],
   ['world-bank-population', 'market-chart', 'Singapore population history'],
@@ -143,8 +179,8 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['rick-morty-characters', 'media-gallery', 'Character and episode gallery'],
   ['wikimedia-pageviews', 'market-chart', 'Wikipedia readership trend chart'],
   ['openf1-historical', 'motorsport-results', 'Formula 1 qualifying classification'],
-  ['jolpica-f1', 'data-table', 'Jolpica Formula 1 season data'],
-  ['open-meteo-elevation', 'data-table', 'Terrain elevation lookup'],
+  ['jolpica-f1', 'f1-season-catalog', 'Jolpica Formula 1 season catalogue'],
+  ['open-meteo-elevation', 'terrain-elevation', 'Terrain elevation lookup'],
   ['zippopotam-postcode', 'location-map', 'Postcode geolocation lookup'],
   ['irail-liveboard', 'transit-board', 'Belgian railway live departure board'],
   ['swiss-transit-connections', 'transit-board', 'Swiss transit connection lookup'],
@@ -176,18 +212,18 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['endoflife-date', 'release-lifecycle', 'Software release support explorer'],
   ['deps-dev', 'developer-feed', 'Package ecosystem dependency profile'],
   ['ecb-fx-rates', 'exchange-rates', 'Fiat and crypto rate conversion'],
-  ['un-sdg-goals', 'data-table', 'United Nations SDG list'],
+  ['un-sdg-goals', 'sdg-goals', 'United Nations Sustainable Development Goal catalogue'],
   ['datacite-search', 'research-library', 'DataCite DOI search results'],
   ['ror-search', 'research-library', 'Research organization registry profile'],
-  ['celestrak-satellites', 'data-table', 'Satellite orbital elements board'],
+  ['celestrak-satellites', 'satellite-orbits', 'CelesTrak GP orbital-element board'],
   ['cleveland-museum-search', 'media-gallery', 'Open-access artwork gallery'],
   ['scryfall-card-search', 'media-gallery', 'Magic: The Gathering card gallery'],
   ['dnd5e-spell-lookup', 'dictionary-entry', 'D&D 5e spell reference card'],
   ['qr-code-generator', 'media-gallery', 'Generated QR code preview'],
   ['where-the-iss-at', 'location-map', 'ISS live position tracker'],
-  ['eurostat-population', 'data-table', 'Eurostat population statistics record'],
+  ['eurostat-population', 'population-statistic', 'Eurostat population-on-1-January statistic'],
   ['bls-timeseries', 'market-chart', 'U.S. labor statistics time series'],
-  ['fema-disasters', 'data-table', 'FEMA disaster declaration board'],
+  ['fema-disasters', 'disaster-declared-areas', 'FEMA declared geographic areas'],
   ['noaa-tides', 'coastal-water-level', 'NOAA coastal water-level observation'],
   ['rdap-domain-lookup', 'domain-registration', 'RDAP domain registration record'],
   ['languagetool-grammar-check', 'grammar-review', 'Writing issues and suggested replacements'],
@@ -198,40 +234,40 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['uniprot-protein', 'protein-annotation', 'UniProt protein annotation profile'],
   ['rcsb-pdb-entry', 'molecular-structure', 'Protein Data Bank structure record'],
   ['ensembl-gene-lookup', 'gene-locus', 'Ensembl stable gene locus profile'],
-  ['obis-marine-occurrences', 'data-table', 'Marine species occurrence board'],
-  ['worms-species-lookup', 'data-table', 'Marine taxonomy registry card'],
-  ['paleobiodb-taxa', 'data-table', 'Fossil taxon record card'],
-  ['usgs-water-legacy', 'data-table', 'River gauge reading card'],
+  ['obis-marine-occurrences', 'marine-occurrences', 'OBIS marine occurrence evidence'],
+  ['worms-species-lookup', 'marine-taxonomy', 'WoRMS accepted-name taxonomy resolution'],
+  ['paleobiodb-taxa', 'fossil-taxon', 'Paleobiology fossil taxon profile'],
+  ['usgs-water-legacy', 'water-gauge', 'USGS continuous water observation'],
   ['rubygems-lookup', 'developer-feed', 'Ruby gem release profile'],
   ['nuget-package-lookup', 'developer-feed', '.NET package release profile'],
   ['internet-archive-search', 'media-gallery', 'Archived media discovery wall'],
-  ['ipwhois-lookup', 'data-table', 'IP geolocation network card'],
-  ['newton-math-solver', 'data-table', 'Math expression result card'],
-  ['datamuse-rhymes', 'data-table', 'Word relation result list'],
-  ['open5e-monster-search', 'data-table', 'Tabletop monster stat board'],
+  ['ipwhois-lookup', 'ip-geolocation', 'Approximate IP location and network identity'],
+  ['newton-math-solver', 'symbolic-math', 'Symbolic math operation result'],
+  ['datamuse-rhymes', 'lexical-matches', 'Pronunciation-aware lexical matches'],
+  ['open5e-monster-search', 'monster-statblock', 'Open5e V2 source-aware creature stat cards'],
   ['dicebear-avatar', 'media-gallery', 'Generated avatar preview'],
-  ['catfacts', 'data-table', 'Random cat fact card'],
+  ['catfacts', 'cat-fact', 'Random cat fact'],
   ['randomfox-photo', 'media-gallery', 'Random fox photo card'],
-  ['malaysia-core-cpi', 'data-table', 'Malaysia core CPI records'],
-  ['malaysia-household-income', 'data-table', 'Malaysia household income records'],
-  ['malaysia-population', 'data-table', 'Malaysia population profile'],
+  ['malaysia-core-cpi', 'core-cpi-index', 'Malaysia overall core CPI index trend'],
+  ['malaysia-household-income', 'household-income', 'Malaysia HIES mean and median household-income trend'],
+  ['malaysia-population', 'population-total', 'Malaysia national total population trend'],
   ['openfda-food-recalls', 'food-recalls', 'FDA food recall enforcement reports'],
-  ['iconify-search', 'data-table', 'Icon search results'],
-  ['homebrew-formula-json', 'data-table', 'Homebrew package metadata'],
+  ['iconify-search', 'icon-catalog', 'Icon identifier and licence catalogue'],
+  ['homebrew-formula-json', 'homebrew-package', 'Homebrew formula and cask package metadata'],
   ['npm-download-counts', 'download-summary', 'Package download reporting window'],
-  ['geoboundaries-admin-boundaries', 'data-table', 'Administrative boundary metadata'],
+  ['geoboundaries-admin-boundaries', 'boundary-layer', 'Administrative boundary layer provenance and downloads'],
   ['osrm-route', 'route-summary', 'OSRM route summary and turn steps'],
-  ['opendota-pro-matches', 'data-table', 'OpenDota pro matches'],
-  ['openligadb-matches', 'data-table', 'OpenLigaDB fixtures'],
-  ['uk-parliament-members', 'data-table', 'UK Parliament members directory'],
+  ['opendota-pro-matches', 'pro-match-results', 'OpenDota professional match results'],
+  ['openligadb-matches', 'football-matchday', 'OpenLigaDB matchday schedule and typed results'],
+  ['uk-parliament-members', 'parliament-members', 'UK Parliament current members directory'],
   ['gleif-lei', 'legal-entity', 'Global LEI legal-entity profile'],
   ['fdic-bankfind', 'bank-institution', 'FDIC institution identity and financial snapshot'],
-  ['uk-food-hygiene', 'data-table', 'UK food hygiene inspection scores'],
-  ['uk-flood-monitoring', 'data-table', 'UK flood warning and station monitoring'],
-  ['unhcr-refugees', 'data-table', 'Refugee and displacement statistics'],
-  ['hdx-humanitarian-datasets', 'data-table', 'IFRC GO emergency event brief'],
+  ['uk-food-hygiene', 'food-hygiene-ratings', 'UK food hygiene rating and intervention scores'],
+  ['uk-flood-monitoring', 'flood-stations', 'Environment Agency river monitoring stations'],
+  ['unhcr-refugees', 'refugee-population', 'UNHCR year-end displacement population profile'],
+  ['hdx-humanitarian-datasets', 'humanitarian-events', 'IFRC GO source-aware emergency event brief'],
   ['open-meteo-climate', 'market-chart', 'Climate model projection comparison'],
-  ['models-dev', 'data-table', 'Hugging Face model search'],
+  ['models-dev', 'ai-model-catalog', 'Hugging Face model catalogue and access metadata'],
   ['vatcomply', 'exchange-rates', 'VATComply daily exchange-rate conversion'],
   ['mempool-space-btc', 'transaction-fees', 'Bitcoin recommended transaction fee rates'],
   ['metacpan', 'developer-feed', 'Perl/CPAN module discovery'],
@@ -239,14 +275,14 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['pub-dev', 'developer-feed', 'Dart and Flutter package lookup'],
   ['go-module-proxy', 'developer-feed', 'Go module version catalog'],
   ['flathub-appstream', 'media-gallery', 'Linux desktop appstream browser'],
-  ['mlb-stats-api', 'data-table', 'MLB schedule data'],
+  ['mlb-stats-api', 'baseball-schedule', 'MLB dated schedule and game-state summary'],
   ['github-global-advisories', 'security-center', 'GitHub global advisory watchlist'],
   ['dblp-search', 'research-library', 'DBLP computer-science publication search'],
   ['citybikes-network', 'location-map', 'Live bike-sharing station map'],
   ['wikimedia-commons-search', 'media-gallery', 'Wikimedia Commons licensed media wall'],
   ['nominatim-search', 'location-map', 'OpenStreetMap geocoding explorer'],
   ['jsdelivr-package', 'developer-feed', 'jsDelivr package release SSOT'],
-  ['canada-open-data-search', 'data-table', 'Canada open-data catalogue search'],
+  ['canada-open-data-search', 'open-data-catalog', 'Canada open-government catalogue search'],
   ['gbif-occurrence-search', 'location-map', 'GBIF biodiversity occurrence map'],
   ['open-meteo-ensemble', 'market-chart', 'Ensemble forecast uncertainty chart'],
   ['world-bank-indicator-explorer', 'market-chart', 'World Bank selectable indicator trend'],

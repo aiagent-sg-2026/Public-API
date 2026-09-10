@@ -1,3 +1,5 @@
+export { OpenMeteoClimatePreview } from './OpenMeteoClimatePreview'
+import './marketCards.css'
 import type { ApiDemo } from '../apiCatalog'
 import { Sparkline } from './ChartPrimitives'
 import { cleanText, compactNumber, findByKey, findPreviewRecords, formatNumber, isRecord, numberValue, previewLabel, recordArray, recordValue, textValue } from './previewData'
@@ -126,30 +128,34 @@ function marketSnapshot(api: ApiDemo, data: unknown): MarketSnapshot {
   }
   if (api.id === 'nasa-power-climate' && isRecord(data)) {
     const properties = isRecord(data.properties) ? data.properties : {}
-    const parameterSources = isRecord(properties.parameters) ? properties.parameters : isRecord(data.parameters) ? data.parameters : {}
-    const preferredKeys = ['T2M', 'T2M_MAX', 'T2M_MIN', 'RH2M', 'WS2M', 'PRECTOT']
-    const selectedKey = preferredKeys.find((key) => isRecord(parameterSources[key])) ?? Object.keys(parameterSources)[0]
-    const selected = selectedKey ? (isRecord(parameterSources[selectedKey]) ? parameterSources[selectedKey] : {}) : {}
-    const selectedData = isRecord(selected.data) ? selected.data : isRecord(selected.values) ? selected.values : selected
-    const rawSeries = isRecord(selectedData) ? Object.entries(selectedData) : []
-    const series = rawSeries
-      .map(([date, value]) => ({ date, value: numberValue(value) }))
-      .filter((entry): entry is { date: string; value: number } => entry.value !== undefined)
+    const parameterSeries = isRecord(properties.parameter) ? properties.parameter : {}
+    const parameterMetadata = isRecord(data.parameters) ? data.parameters : {}
+    const header = isRecord(data.header) ? data.header : {}
+    const preferredKeys = ['T2M', 'T2M_MAX', 'T2M_MIN', 'RH2M', 'WS10M', 'PRECTOTCORR', 'ALLSKY_SFC_SW_DWN']
+    const selectedKey = preferredKeys.find((key) => isRecord(parameterSeries[key])) ?? Object.keys(parameterSeries).find((key) => isRecord(parameterSeries[key]))
+    const selectedSeries = selectedKey && isRecord(parameterSeries[selectedKey]) ? parameterSeries[selectedKey] : {}
+    const selectedMetadata = selectedKey && isRecord(parameterMetadata[selectedKey]) ? parameterMetadata[selectedKey] : {}
+    const fillValue = numberValue(header.fill_value)
+    const formatPowerDate = (date: string) => /^\d{8}$/.test(date) ? `${date.slice(0, 4)}-${date.slice(4, 6)}-${date.slice(6, 8)}` : date
+    const series = Object.entries(selectedSeries)
+      .map(([date, value]) => ({ date: formatPowerDate(date), value: numberValue(value) }))
+      .filter((entry): entry is { date: string; value: number } => entry.value !== undefined && entry.value !== fillValue)
       .slice(-180)
     const points = series.map((entry) => entry.value)
     const dates = series.map((entry) => entry.date)
     const latest = points.at(-1) ?? 0
-    const unit = cleanText(selected.unit) || cleanText(selected.units) || 'units'
+    const unit = cleanText(selectedMetadata.units) || 'units'
+    const longName = cleanText(selectedMetadata.longname) || 'Climate metric'
     return {
-      label: `NASA POWER · ${selectedKey ?? 'climate'} · ${cleanText(selected.label) ?? 'Climate metric'}`,
+      label: `NASA POWER · ${selectedKey ?? 'climate'} · ${longName}`,
       value: latest,
       currency: unit,
       points,
       dates,
       metrics: [
-        { label: 'Latest value', value: `${formatNumber(latest)} ${unit}` },
+        { label: 'Latest value', value: points.length ? `${formatNumber(latest)} ${unit}` : '—' },
         { label: 'Series length', value: String(series.length) },
-        { label: 'Range', value: points.length ? `${formatNumber(Math.min(...points), 4)} – ${formatNumber(Math.max(...points), 4)}` : '—' },
+        { label: 'Range', value: points.length ? `${formatNumber(Math.min(...points), 4)} – ${formatNumber(Math.max(...points), 4)} ${unit}` : '—' },
       ],
     }
   }

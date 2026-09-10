@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, validateParameters } from './apiCatalog'
+import { apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, matchesApiSearch, validateParameters } from './apiCatalog'
 import { previewProfileIds, previewProfiles } from './previewProfiles'
 
 describe('API catalog', () => {
@@ -10,6 +10,259 @@ describe('API catalog', () => {
       const url = new URL(api.buildUrl(getDefaultParameters(api)))
       expect(url.protocol).toBe('https:')
     }
+  })
+
+  it('keeps zero-valued numeric inputs valid and exposes only supported AlAdhan built-in method IDs', () => {
+    const aladhan = getApiById('aladhan-prayer-times')
+    expect(aladhan).toBeDefined()
+    if (!aladhan) return
+
+    const method = aladhan.fields.find((field) => field.id === 'method')
+    expect(method?.type).toBe('select')
+    expect(method?.options?.some((option) => option.value === '0')).toBe(true)
+    expect(method?.options?.some((option) => option.value === '6')).toBe(false)
+    expect(method?.options?.some((option) => option.value === '99')).toBe(false)
+
+    const defaults = getDefaultParameters(aladhan)
+    const jafari = new URL(aladhan.buildUrl({ ...defaults, method: '0' }))
+    expect(jafari.searchParams.get('method')).toBe('0')
+    expect(validateParameters(aladhan, { ...defaults, method: '0' })).toEqual({})
+    expect(validateParameters(aladhan, { ...defaults, method: '6' })).toEqual({
+      method: 'Calculation method must be one of the supported options.',
+    })
+  })
+
+
+  it('uses native ISO date fields for Bank of Canada and rejects compact dates that the provider does not accept', () => {
+    const bank = getApiById('bank-of-canada-valet')
+    expect(bank).toBeDefined()
+    if (!bank) return
+
+    const defaults = getDefaultParameters(bank)
+    const startDate = bank.fields.find((field) => field.id === 'startDate')
+    const endDate = bank.fields.find((field) => field.id === 'endDate')
+    expect(startDate?.type).toBe('date')
+    expect(endDate?.type).toBe('date')
+    expect(startDate?.defaultValue).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(endDate?.defaultValue).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(validateParameters(bank, { ...defaults, startDate: '20260901' })).toEqual({
+      startDate: 'Start date must be a valid date in YYYY-MM-DD format.',
+    })
+
+    const url = new URL(bank.buildUrl({ ...defaults, startDate: '2026-08-03', endDate: '2026-08-07' }))
+    expect(url.searchParams.get('start_date')).toBe('2026-08-03')
+    expect(url.searchParams.get('end_date')).toBe('2026-08-07')
+  })
+
+  it('uses one ISO date SSOT for historical climate inputs and converts only at provider boundaries', () => {
+    const openMeteo = getApiById('open-meteo-history')
+    const nasaPower = getApiById('nasa-power-climate')
+    expect(openMeteo).toBeDefined()
+    expect(nasaPower).toBeDefined()
+    if (!openMeteo || !nasaPower) return
+
+    for (const api of [openMeteo, nasaPower]) {
+      const defaults = getDefaultParameters(api)
+      expect(api.fields.find((field) => field.id === 'startDate')?.type, api.id).toBe('date')
+      expect(api.fields.find((field) => field.id === 'endDate')?.type, api.id).toBe('date')
+      expect(defaults.startDate, api.id).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(defaults.endDate, api.id).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+      expect(validateParameters(api, { ...defaults, startDate: '20260803' }), api.id).toEqual({
+        startDate: 'Start date must be a valid date in YYYY-MM-DD format.',
+      })
+    }
+
+    const openMeteoUrl = new URL(openMeteo.buildUrl({ ...getDefaultParameters(openMeteo), startDate: '2026-08-03', endDate: '2026-08-07' }))
+    expect(openMeteoUrl.searchParams.get('start_date')).toBe('2026-08-03')
+    expect(openMeteoUrl.searchParams.get('end_date')).toBe('2026-08-07')
+
+    const nasaUrl = new URL(nasaPower.buildUrl({ ...getDefaultParameters(nasaPower), startDate: '2026-08-03', endDate: '2026-08-07' }))
+    expect(nasaUrl.searchParams.get('start')).toBe('20260803')
+    expect(nasaUrl.searchParams.get('end')).toBe('20260807')
+  })
+
+  it('keeps ordered date and year ranges in the shared field SSOT instead of silently rewriting reversed input', () => {
+    const cases = [
+      ['bank-of-canada-valet', 'startDate', 'endDate', '2026-08-07', '2026-08-03'],
+      ['open-meteo-history', 'startDate', 'endDate', '2026-08-07', '2026-08-03'],
+      ['nasa-power-climate', 'startDate', 'endDate', '2026-08-07', '2026-08-03'],
+      ['frankfurter-sgd-myr-history', 'from', 'to', '2026-08-07', '2026-08-03'],
+      ['open-meteo-climate', 'startYear', 'endYear', '2030', '2020'],
+      ['world-bank-indicator-explorer', 'startYear', 'endYear', '2025', '2015'],
+    ] as const
+
+    for (const api of apiCatalog) {
+      for (const field of api.fields.filter((candidate) => candidate.minimumFromField)) {
+        const minimumField = api.fields.find((candidate) => candidate.id === field.minimumFromField)
+        expect(minimumField, `${api.id}.${field.id} minimumFromField must reference a declared field`).toBeDefined()
+        expect(minimumField?.type, `${api.id}.${field.id} minimumFromField must reference the same field type`).toBe(field.type)
+        expect(validateParameters(api, getDefaultParameters(api)), `${api.id} defaults must satisfy ordered-range constraints`).toEqual({})
+      }
+    }
+
+    for (const [id, startId, endId, later, earlier] of cases) {
+      const api = getApiById(id)
+      expect(api, id).toBeDefined()
+      if (!api) continue
+      const startField = api.fields.find((field) => field.id === startId)
+      const endField = api.fields.find((field) => field.id === endId)
+      expect(endField, `${id}.${endId}`).toMatchObject({ minimumFromField: startId })
+      const errors = validateParameters(api, { ...getDefaultParameters(api), [startId]: later, [endId]: earlier })
+      expect(errors[endId], id).toBe(endField?.type === 'date'
+        ? `${endField.label} must be on or after ${startField?.label}.`
+        : `${endField?.label} must be greater than or equal to ${startField?.label}.`)
+    }
+
+    const climate = getApiById('open-meteo-climate')
+    const worldBank = getApiById('world-bank-indicator-explorer')
+    expect(climate).toBeDefined()
+    expect(worldBank).toBeDefined()
+    if (!climate || !worldBank) return
+
+    const climateUrl = new URL(climate.buildUrl({ ...getDefaultParameters(climate), startYear: '2030', endYear: '2020' }))
+    expect(climateUrl.searchParams.get('start_date')).toBe('2030-01-01')
+    expect(climateUrl.searchParams.get('end_date')).toBe('2020-12-31')
+
+    const worldBankUrl = new URL(worldBank.buildUrl({ ...getDefaultParameters(worldBank), startYear: '2025', endYear: '2015' }))
+    expect(worldBankUrl.searchParams.get('date')).toBe('2025:2015')
+  })
+
+  it('exposes only the currently documented Open-Meteo Climate model IDs', () => {
+    const climate = getApiById('open-meteo-climate')
+    expect(climate).toBeDefined()
+    if (!climate) return
+
+    const model = climate.fields.find((field) => field.id === 'model')
+    expect(model?.type).toBe('select')
+    expect(model?.defaultValue).toBe('CMCC_CM2_VHR4')
+    expect(model?.options?.map((option) => option.value)).toEqual([
+      'CMCC_CM2_VHR4',
+      'FGOALS_f3_H',
+      'HiRAM_SIT_HR',
+      'MRI_AGCM3_2_S',
+      'EC_Earth3P_HR',
+      'MPI_ESM1_2_XR',
+      'NICAM16_8S',
+    ])
+    expect(validateParameters(climate, { ...getDefaultParameters(climate), model: 'nasa_nex_gddp' })).toEqual({
+      model: 'Model must be one of the supported options.',
+    })
+    expect(new URL(climate.buildUrl(getDefaultParameters(climate))).searchParams.get('models')).toBe('CMCC_CM2_VHR4')
+  })
+
+  it('uses native ISO dates for strict Frankfurter and MLB calendar inputs', () => {
+    const frankfurter = getApiById('frankfurter-sgd-myr-history')
+    const mlb = getApiById('mlb-stats-api')
+    expect(frankfurter).toBeDefined()
+    expect(mlb).toBeDefined()
+    if (!frankfurter || !mlb) return
+
+    const frankfurterDefaults = getDefaultParameters(frankfurter)
+    expect(frankfurter.fields.find((field) => field.id === 'from')?.type).toBe('date')
+    expect(frankfurter.fields.find((field) => field.id === 'to')?.type).toBe('date')
+    expect(validateParameters(frankfurter, { ...frankfurterDefaults, from: '20260901' })).toEqual({
+      from: 'Start date must be a valid date in YYYY-MM-DD format.',
+    })
+    const frankfurterUrl = new URL(frankfurter.buildUrl({ ...frankfurterDefaults, from: '2026-08-03', to: '2026-08-07' }))
+    expect(frankfurterUrl.searchParams.get('from')).toBe('2026-08-03')
+    expect(frankfurterUrl.searchParams.get('to')).toBe('2026-08-07')
+
+    const mlbDefaults = getDefaultParameters(mlb)
+    expect(mlb.fields.find((field) => field.id === 'date')?.type).toBe('date')
+    expect(validateParameters(mlb, { ...mlbDefaults, date: '20260901' })).toEqual({
+      date: 'Schedule date must be a valid date in YYYY-MM-DD format.',
+    })
+    const mlbUrl = new URL(mlb.buildUrl({ ...mlbDefaults, date: '2025-04-15' }))
+    expect(mlbUrl.searchParams.get('date')).toBe('2025-04-15')
+  })
+
+  it('keeps Brazilian CEP format validation in the shared field SSOT before provider execution', () => {
+    const brasil = getApiById('brasilapi-postcode')
+    expect(brasil).toBeDefined()
+    if (!brasil) return
+
+    const field = brasil.fields.find((candidate) => candidate.id === 'postcode')
+    expect(field).toMatchObject({
+      type: 'text',
+      pattern: '\\d{5}-?\\d{3}',
+      patternDescription: 'must contain exactly eight digits, optionally formatted as 12345-678.',
+    })
+
+    expect(validateParameters(brasil, { postcode: '01310930' })).toEqual({})
+    expect(validateParameters(brasil, { postcode: '01310-930' })).toEqual({})
+    expect(validateParameters(brasil, { postcode: '01310-930abc' })).toEqual({
+      postcode: 'Brazilian CEP must contain exactly eight digits, optionally formatted as 12345-678.',
+    })
+    expect(validateParameters(brasil, { postcode: '0131093' })).toEqual({
+      postcode: 'Brazilian CEP must contain exactly eight digits, optionally formatted as 12345-678.',
+    })
+
+    expect(new URL(brasil.buildUrl({ postcode: '01310930' })).pathname).toBe('/api/cep/v2/01310930')
+    expect(new URL(brasil.buildUrl({ postcode: '01310-930' })).pathname).toBe('/api/cep/v2/01310930')
+  })
+
+  it('rejects undeclared parameter keys across the shared catalog validation boundary', () => {
+    for (const api of apiCatalog) {
+      const defaults = getDefaultParameters(api)
+      expect(validateParameters(api, { ...defaults, __undeclared: 'hidden' }), api.id).toEqual({
+        __undeclared: 'Unknown parameter: __undeclared.',
+      })
+    }
+
+    const mlb = getApiById('mlb-stats-api')
+    expect(mlb).toBeDefined()
+    if (!mlb) return
+    const defaults = getDefaultParameters(mlb)
+    expect(validateParameters(mlb, { ...defaults, teamId: '147' })).toEqual({ teamId: 'Unknown parameter: teamId.' })
+    expect(new URL(mlb.buildUrl({ ...defaults, teamId: '147' })).searchParams.has('teamId')).toBe(false)
+  })
+
+  it('keeps declared limit controls request-effective across the catalog SSOT', () => {
+    for (const api of apiCatalog) {
+      const limitField = api.fields.find((field) => field.id === 'limit')
+      if (!limitField) continue
+
+      const defaults = getDefaultParameters(api)
+      const alternate = limitField.max !== undefined && String(limitField.max) !== defaults.limit
+        ? String(limitField.max)
+        : limitField.min !== undefined && String(limitField.min) !== defaults.limit
+          ? String(limitField.min)
+          : undefined
+      expect(alternate, `${api.id}: limit control needs an alternate valid value`).toBeDefined()
+      if (!alternate) continue
+
+      const changed = { ...defaults, limit: alternate }
+      const defaultRequest = { url: api.buildUrl(defaults), body: api.buildBody?.(defaults) }
+      const changedRequest = { url: api.buildUrl(changed), body: api.buildBody?.(changed) }
+      expect(changedRequest, `${api.id}: changing the declared limit must change the provider request`).not.toEqual(defaultRequest)
+    }
+  })
+
+  it('supports task-oriented token search and SSOT keyword aliases', () => {
+    const expectMatch = (id: string, query: string) => {
+      const api = getApiById(id)
+      expect(api, id).toBeDefined()
+      expect(matchesApiSearch(api!, query), `${id} should match ${query}`).toBe(true)
+    }
+
+    expectMatch('nominatim-search', 'address to coordinates')
+    expectMatch('exchange-rate-current', 'convert currency')
+    expectMatch('languagetool-grammar-check', 'spell check')
+    expectMatch('deps-dev', 'package vulnerabilities')
+    expectMatch('celestrak-satellites', 'satellite orbit')
+    expectMatch('uk-flood-monitoring', 'flood stations')
+    expectMatch('datamuse-rhymes', 'word pronunciation')
+    expectMatch('swiss-transit-connections', 'train connections')
+    expectMatch('usgs', 'earthquake data')
+    expectMatch('nasa-power-climate', 'climate data for coordinates')
+
+    expectMatch('deps-dev', 'please show me an API for package vulnerabilities')
+    expectMatch('nominatim-search', 'can you find me an address geocoder')
+    expectMatch('exchange-rate-current', 'please show me how to convert currency')
+    expectMatch('weather', 'show me current weather')
+    expectMatch('qr-code-generator', 'please generate a QR code')
+    expectMatch('nhtsa-vehicle-recalls', 'please show me vehicle recalls')
+    expect(matchesApiSearch(getApiById('countries')!, 'package vulnerabilities')).toBe(false)
   })
 
   it('has unique monograms (no duplicate UI badges)', () => {
@@ -197,6 +450,9 @@ describe('API catalog', () => {
     expect(urls['datacite-search'].searchParams.get('query')).toBe('climate change')
     expect(urls['ror-search'].searchParams.get('query')).toBe('stanford')
     expect(urls['celestrak-satellites'].searchParams.get('GROUP')).toBe('stations')
+    expect(urls['celestrak-satellites'].searchParams.get('FORMAT')).toBe('json')
+    expect(getApiById('celestrak-satellites')?.fields.find((field) => field.id === 'group')?.options?.map((option) => option.value)).toEqual(['stations', 'gps-ops'])
+    expect(getApiById('celestrak-satellites')?.usageNote).toContain('excludes large Active and Starlink groups')
     expect(urls['cleveland-museum-search'].searchParams.get('q')).toBe('monet')
     expect(urls['scryfall-card-search'].searchParams.get('q')).toBe('dragon')
     expect(urls['dnd5e-spell-lookup'].pathname).toBe('/api/2014/spells/fireball')
@@ -224,8 +480,14 @@ describe('API catalog', () => {
     }))
 
     expect(urls['eurostat-population'].searchParams.get('geo')).toBe('DE')
+    expect(urls['eurostat-population'].searchParams.get('time')).toBe('2025')
+    expect(urls['eurostat-population'].searchParams.get('sex')).toBe('T')
+    expect(urls['eurostat-population'].searchParams.get('age')).toBe('TOTAL')
+    expect(getApiById('eurostat-population')?.fields.find((field) => field.id === 'year')?.max).toBe(2025)
     expect(urls['bls-timeseries'].pathname).toBe('/publicAPI/v2/timeseries/data/LNS14000000')
     expect(urls['fema-disasters'].searchParams.get('$top')).toBe('5')
+    expect(urls['fema-disasters'].searchParams.get('$orderby')).toBe('declarationDate desc')
+    expect(getApiById('fema-disasters')?.usageNote).toContain('area-level')
     expect(urls['noaa-tides'].searchParams.get('station')).toBe('8518750')
     expect(urls['noaa-tides'].searchParams.get('product')).toBe('water_level')
     expect(urls['noaa-tides'].searchParams.get('date')).toBe('latest')
@@ -246,16 +508,37 @@ describe('API catalog', () => {
     expect(urls['obis-marine-occurrences'].searchParams.get('scientificname')).toBe('Delphinus delphis')
     expect(urls['worms-species-lookup'].pathname).toBe('/rest/AphiaRecordsByName/Delphinus%20delphis')
     expect(urls['paleobiodb-taxa'].searchParams.get('name')).toBe('Tyrannosaurus')
-    expect(urls['usgs-water-legacy'].searchParams.get('sites')).toBe('01646500')
+    expect(getApiById('obis-marine-occurrences')?.usageNote).toContain('QC flags')
+    expect(getApiById('worms-species-lookup')?.usageNote).toContain('valid_AphiaID')
+    expect(getApiById('paleobiodb-taxa')?.usageNote).toContain('subtaxa')
+    expect(urls['usgs-water-legacy'].hostname).toBe('api.waterdata.usgs.gov')
+    expect(urls['usgs-water-legacy'].pathname).toBe('/ogcapi/v1/collections/latest-continuous/items')
+    expect(urls['usgs-water-legacy'].searchParams.get('f')).toBe('json')
+    expect(urls['usgs-water-legacy'].searchParams.get('monitoring_location_id')).toBe('USGS-01646500')
+    expect(urls['usgs-water-legacy'].searchParams.get('parameter_code')).toBe('00060')
+    expect(urls['usgs-water-legacy'].searchParams.get('limit')).toBe('1')
     expect(urls['rubygems-lookup'].pathname).toBe('/api/v1/gems/rails.json')
     expect(urls['nuget-package-lookup'].pathname).toBe('/v3/registration5-semver1/newtonsoft.json/index.json')
     expect(urls['internet-archive-search'].searchParams.get('q')).toBe('singapore AND mediatype:texts')
     expect(urls['ipwhois-lookup'].pathname).toBe('/8.8.8.8')
+    expect(getApiById('ipwhois-lookup')?.usageNote).toContain('1,000 requests/day')
+    expect(getApiById('ipwhois-lookup')?.usageNote).toContain('counted per domain')
+    expect(urls['newton-math-solver'].hostname).toBe('newton.vercel.app')
     expect(urls['newton-math-solver'].pathname).toBe('/api/v2/simplify/2x%2B2x')
-    expect(urls['datamuse-rhymes'].searchParams.get('rel_rhy')).toBe('orange')
+    expect(getApiById('newton-math-solver')?.usageNote).toContain('community-maintained')
+    expect(urls['datamuse-rhymes'].searchParams.get('sl')).toBe('orange')
+    expect(urls['datamuse-rhymes'].searchParams.get('rel_rhy')).toBeNull()
+    expect(urls['datamuse-rhymes'].searchParams.get('max')).toBe('8')
+    expect(urls['datamuse-rhymes'].searchParams.get('md')).toBe('psr')
+    expect(urls['datamuse-rhymes'].searchParams.get('ipa')).toBe('1')
+    expect(getApiById('datamuse-rhymes')?.usageNote).toContain('2027-01-01')
     expect(urls['open5e-monster-search'].hostname).toBe('api.open5e.com')
-    expect(urls['open5e-monster-search'].searchParams.get('search')).toBe('dragon')
+    expect(urls['open5e-monster-search'].pathname).toBe('/v2/creatures/')
+    expect(urls['open5e-monster-search'].searchParams.get('name__icontains')).toBe('dragon')
     expect(urls['open5e-monster-search'].searchParams.get('limit')).toBe('8')
+    expect(urls['open5e-monster-search'].searchParams.get('fields')).toContain('challenge_rating')
+    expect(urls['open5e-monster-search'].searchParams.get('document__fields')).toBe('name,key,gamesystem')
+    expect(getApiById('open5e-monster-search')?.usageNote).toContain('Open5e V2')
     expect(urls['dicebear-avatar'].pathname).toBe('/9.x/identicon/svg')
     expect(urls['catfacts'].pathname).toBe('/fact')
     expect(urls['randomfox-photo'].pathname).toBe('/floof')
@@ -309,6 +592,7 @@ describe('API catalog', () => {
     expect(urls['open-meteo-elevation'].searchParams.get('latitude')).toBe('1.3521')
     expect(urls['open-meteo-elevation'].searchParams.get('longitude')).toBe('103.8198')
     expect(urls['open-meteo-elevation'].searchParams.get('format')).toBe('json')
+    expect(getApiById('open-meteo-elevation')?.usageNote).toContain('attribution to both the Copernicus programme and Open-Meteo')
     expect(urls['zippopotam-postcode'].hostname).toBe('api.zippopotam.us')
     expect(urls['zippopotam-postcode'].pathname).toBe('/us/10001')
 
@@ -326,7 +610,7 @@ describe('API catalog', () => {
 
     const anilist = getApiById('anilist-graphql')
     expect(anilist?.method).toBe('POST')
-    expect(anilist?.buildBody?.({ query: 'Steins Gate', mediaType: 'MANGA', count: '4', page: '2' })).toEqual(expect.objectContaining({
+    expect(anilist?.buildBody?.({ query: 'Steins Gate', mediaType: 'MANGA', limit: '4', page: '2' })).toEqual(expect.objectContaining({
       variables: expect.objectContaining({ search: 'Steins Gate', perPage: 4, page: 2, type: 'MANGA' }),
     }))
   })
@@ -347,34 +631,62 @@ describe('API catalog', () => {
 
     expect(urls['malaysia-core-cpi'].hostname).toBe('api.data.gov.my')
     expect(urls['malaysia-core-cpi'].searchParams.get('id')).toBe('cpi_core')
+    expect(urls['malaysia-core-cpi'].searchParams.get('filter')).toBe('overall@division')
+    expect(urls['malaysia-core-cpi'].searchParams.get('limit')).toBe('12')
+    const cpiApi = getApiById('malaysia-core-cpi')
+    expect(cpiApi?.fields[0]?.id).toBe('limit')
+    expect(new URL(cpiApi!.buildUrl({ limit: '18' })).searchParams.get('limit')).toBe('18')
     expect(urls['malaysia-household-income'].hostname).toBe('api.data.gov.my')
     expect(urls['malaysia-household-income'].searchParams.get('id')).toBe('hh_income')
+    expect(urls['malaysia-household-income'].searchParams.get('limit')).toBe('10')
+    const incomeApi = getApiById('malaysia-household-income')
+    expect(incomeApi?.fields[0]?.id).toBe('limit')
+    expect(new URL(incomeApi!.buildUrl({ limit: '14' })).searchParams.get('limit')).toBe('14')
     expect(urls['malaysia-population'].hostname).toBe('api.data.gov.my')
     expect(urls['malaysia-population'].searchParams.get('id')).toBe('population_malaysia')
+    expect(urls['malaysia-population'].searchParams.get('filter')).toBe('both@sex,overall@age,overall@ethnicity')
+    expect(urls['malaysia-population'].searchParams.get('limit')).toBe('10')
+    const populationApi = getApiById('malaysia-population')
+    expect(populationApi?.fields[0]?.id).toBe('limit')
+    expect(new URL(populationApi!.buildUrl({ limit: '16' })).searchParams.get('limit')).toBe('16')
     expect(urls['openfda-food-recalls'].hostname).toBe('api.fda.gov')
     expect(urls['openfda-food-recalls'].pathname).toBe('/food/enforcement.json')
     expect(urls['openfda-food-recalls'].searchParams.get('search')).toBe('peanut')
     expect(urls['iconify-search'].hostname).toBe('api.iconify.design')
     expect(urls['iconify-search'].pathname).toBe('/search')
     expect(urls['iconify-search'].searchParams.get('query')).toBe('home')
-    expect(urls['iconify-search'].searchParams.get('limit')).toBe('12')
+    expect(urls['iconify-search'].searchParams.get('limit')).toBe('32')
     expect(urls['homebrew-formula-json'].hostname).toBe('formulae.brew.sh')
     expect(urls['homebrew-formula-json'].pathname).toBe('/api/formula/node.json')
+    const homebrewApi = getApiById('homebrew-formula-json')
+    expect(homebrewApi?.fields.find((field) => field.id === 'formula')?.label).toBe('Formula or cask token')
+    expect(new URL(homebrewApi!.buildUrl({ formula: 'postman', collection: 'cask' })).pathname).toBe('/api/cask/postman.json')
     expect(urls['npm-download-counts'].hostname).toBe('api.npmjs.org')
     expect(urls['npm-download-counts'].pathname).toBe('/downloads/point/last-week/react')
     expect(urls['geoboundaries-admin-boundaries'].hostname).toBe('www.geoboundaries.org')
     expect(urls['geoboundaries-admin-boundaries'].pathname).toBe('/api/current/gbOpen/SGP/ADM0/')
+    expect(getApiById('geoboundaries-admin-boundaries')?.fields.find((field) => field.id === 'adminLevel')?.options?.map((option) => option.value)).toEqual(['ADM0', 'ADM1', 'ADM2', 'ADM3', 'ADM4', 'ADM5'])
+    expect(getApiById('geoboundaries-admin-boundaries')?.usageNote).toContain('meanAreaSqKM')
     expect(urls['osrm-route'].hostname).toBe('router.project-osrm.org')
     expect(urls['osrm-route'].pathname).toBe('/route/v1/driving/103.8198,1.3521;103.851959,1.29027')
     expect(urls['osrm-route'].searchParams.get('alternatives')).toBe('1')
+    expect(getApiById('osrm-route')?.fields.find((field) => field.label === 'Alternatives')?.id).toBe('alternatives')
+    expect(new URL(getApiById('osrm-route')!.buildUrl({ startLatitude: '1.3521', startLongitude: '103.8198', endLatitude: '1.290270', endLongitude: '103.851959', alternatives: '3' })).searchParams.get('alternatives')).toBe('3')
     expect(urls['opendota-pro-matches'].hostname).toBe('api.opendota.com')
     expect(urls['opendota-pro-matches'].pathname).toBe('/api/proMatches')
-    expect(urls['opendota-pro-matches'].searchParams.get('limit')).toBe('8')
+    expect(urls['opendota-pro-matches'].search).toBe('')
+    expect(getApiById('opendota-pro-matches')?.fields).toEqual([])
+    expect(getApiById('opendota-pro-matches')?.usageNote).toContain('does not expose a result-count limit')
     expect(urls['openligadb-matches'].hostname).toBe('api.openligadb.de')
     expect(urls['openligadb-matches'].pathname).toBe('/getmatchdata/bl1/2025/1')
     expect(urls['uk-parliament-members'].hostname).toBe('members-api.parliament.uk')
     expect(urls['uk-parliament-members'].pathname).toBe('/api/Members/Search')
-    expect(urls['uk-parliament-members'].searchParams.get('name')).toBe('Rishi')
+    expect(urls['uk-parliament-members'].searchParams.get('Name')).toBe('Rishi')
+    expect(urls['uk-parliament-members'].searchParams.get('take')).toBe('10')
+    expect(urls['uk-parliament-members'].searchParams.has('limit')).toBe(false)
+    const parliamentLimit = getApiById('uk-parliament-members')?.fields.find((field) => field.id === 'limit')
+    expect(parliamentLimit?.max).toBe(20)
+    expect(new URL(getApiById('uk-parliament-members')!.buildUrl({ query: 'a', limit: '50' })).searchParams.get('take')).toBe('20')
     expect(urls['mlb-stats-api'].hostname).toBe('statsapi.mlb.com')
     expect(urls['mlb-stats-api'].pathname).toBe('/api/v1/schedule')
     expect(urls['mlb-stats-api'].searchParams.get('sportId')).toBe('1')
@@ -407,18 +719,28 @@ describe('API catalog', () => {
     expect(urls['uk-food-hygiene'].hostname).toBe('api.ratings.food.gov.uk')
     expect(urls['uk-food-hygiene'].pathname).toBe('/Establishments')
     expect(urls['uk-food-hygiene'].searchParams.get('name')).toBe('Cafe')
+    expect(urls['uk-food-hygiene'].searchParams.get('pageNumber')).toBe('1')
+    expect(urls['uk-food-hygiene'].searchParams.get('pageSize')).toBe('5')
+    expect(foodHygiene?.usageNote).toContain('lower better')
 
     expect(urls['uk-flood-monitoring'].hostname).toBe('environment.data.gov.uk')
     expect(urls['uk-flood-monitoring'].pathname).toBe('/flood-monitoring/id/stations')
-    expect(urls['uk-flood-monitoring'].searchParams.get('riverName')).toBe('Thames')
+    expect(urls['uk-flood-monitoring'].searchParams.get('riverName')).toBe('River Severn')
+    expect(urls['uk-flood-monitoring'].searchParams.get('_limit')).toBe('8')
+    expect(getApiById('uk-flood-monitoring')?.usageNote).toContain('exact-match filter')
     expect(urls['unhcr-refugees'].hostname).toBe('api.unhcr.org')
     expect(urls['unhcr-refugees'].pathname).toBe('/population/v1/population/')
     expect(urls['unhcr-refugees'].searchParams.get('coo')).toBe('SYR')
-    expect(urls['unhcr-refugees'].searchParams.get('yearFrom')).toBe('2024')
+    expect(urls['unhcr-refugees'].searchParams.get('cf_type')).toBe('ISO')
+    expect(urls['unhcr-refugees'].searchParams.get('yearFrom')).toBe('2025')
+    expect(urls['unhcr-refugees'].searchParams.get('yearTo')).toBe('2025')
+    expect(urls['unhcr-refugees'].searchParams.get('limit')).toBe('1')
+    expect(getApiById('unhcr-refugees')?.fields.map((field) => field.id)).toEqual(['origin', 'year'])
+    expect(getApiById('unhcr-refugees')?.fields.find((field) => field.id === 'origin')).toMatchObject({ minLength: 3, maxLength: 3 })
     expect(urls['hdx-humanitarian-datasets'].hostname).toBe('goadmin.ifrc.org')
     expect(urls['hdx-humanitarian-datasets'].pathname).toBe('/api/v2/event/')
     expect(urls['hdx-humanitarian-datasets'].searchParams.get('limit')).toBe('6')
-    expect(urls['hdx-humanitarian-datasets'].searchParams.get('ordering')).toBe('-created_at')
+    expect(urls['hdx-humanitarian-datasets'].searchParams.get('ordering')).toBe('-disaster_start_date')
     expect(urls['open-meteo-climate'].hostname).toBe('climate-api.open-meteo.com')
     expect(urls['open-meteo-climate'].pathname).toBe('/v1/climate')
     expect(urls['open-meteo-climate'].searchParams.get('daily')).toBe('temperature_2m_mean,precipitation_sum')
@@ -426,6 +748,7 @@ describe('API catalog', () => {
     expect(urls['models-dev'].pathname).toBe('/api/models')
     expect(urls['models-dev'].searchParams.get('search')).toBe('gpt')
     expect(urls['models-dev'].searchParams.get('limit')).toBe('8')
+    expect(urls['models-dev'].searchParams.get('full')).toBe('true')
     expect(urls['vatcomply'].hostname).toBe('api.vatcomply.com')
     expect(urls['vatcomply'].pathname).toBe('/rates')
     expect(urls['vatcomply'].searchParams.get('base')).toBe('EUR')
@@ -461,12 +784,32 @@ describe('API catalog', () => {
 
     expect(urls['usgs'].pathname).toBe('/earthquakes/feed/v1.0/summary/2.5_day.geojson')
     expect(urls['usaspending'].pathname).toBe('/api/v2/search/spending_by_award/')
+    const awardsApi = getApiById('usaspending')
+    expect(awardsApi?.fields.map((field) => field.id)).toEqual(['fiscalYear', 'limit'])
+    expect(awardsApi?.fields.find((field) => field.id === 'fiscalYear')).toMatchObject({ type: 'number', min: 2008 })
+    const defaultFiscalYear = Number(awardsApi?.fields.find((field) => field.id === 'fiscalYear')?.defaultValue)
+    const customFiscalYear = Math.max(2008, defaultFiscalYear - 1)
+    const awardsBody = awardsApi?.buildBody?.({ fiscalYear: String(customFiscalYear), limit: '5' }) as Record<string, unknown>
+    expect(awardsBody).toMatchObject({ page: 1, limit: 5, sort: 'Base Obligation Date', order: 'desc', subawards: false })
+    expect(awardsBody.filters).toEqual({
+      time_period: [{ start_date: `${customFiscalYear - 1}-10-01`, end_date: `${customFiscalYear}-09-30`, date_type: 'new_awards_only' }],
+      award_type_codes: ['A', 'B', 'C', 'D'],
+    })
+    expect(awardsBody.fields).toEqual(expect.arrayContaining(['Award ID', 'Recipient Name', 'Award Amount', 'Base Obligation Date', 'Awarding Agency', 'Funding Agency', 'Contract Award Type', 'Description']))
+    expect(getApiById('usaspending')?.usageNote).toContain('date_type=new_awards_only')
+    expect(getApiById('usaspending')?.usageNote).toContain('total_obligation')
     expect(urls['fiscal-data-treasury'].hostname).toBe('api.usaspending.gov')
     expect(urls['fiscal-data-treasury'].pathname).toBe('/api/v2/agency/020/')
     expect(urls['fiscal-data-treasury'].search).toBe('')
+    expect(getApiById('fiscal-data-treasury')?.usageNote).toContain('does not itself return award obligations')
     expect(urls['wikidata-sparql'].hostname).toBe('query.wikidata.org')
     expect(urls['wikidata-sparql'].pathname).toBe('/sparql')
     expect(urls['wikidata-sparql'].searchParams.get('format')).toBe('json')
+    expect(getApiById('wikidata-sparql')?.headers).toMatchObject({
+      Accept: 'application/sparql-results+json',
+      'Api-User-Agent': 'Public-API/0.1 (https://yapweijun1996.github.io/Public-API/)',
+    })
+    expect(getApiById('wikidata-sparql')?.usageNote).toContain('Api-User-Agent')
     expect(urls['carbon-intensity-gb'].hostname).toBe('api.carbonintensity.org.uk')
     expect(urls['carbon-intensity-gb'].pathname).toBe('/intensity')
     expect(urls['met-museum-object-detail'].pathname).toBe('/public/collection/v1/objects/436535')
@@ -491,6 +834,7 @@ describe('API catalog', () => {
     expect(urls['opencitations-index'].hostname).toBe('api.opencitations.net')
     expect(urls['opencitations-index'].pathname).toBe('/index/v2/citation-count/doi:10.1109%2F5.771073')
     expect(urls['opencitations-index'].search).toBe('')
+    expect(getApiById('opencitations-index')?.usageNote).toContain('180 requests/minute')
     expect(urls['vam-collections'].hostname).toBe('api.vam.ac.uk')
     expect(urls['vam-collections'].pathname).toBe('/v2/objects/search')
     expect(urls['vam-collections'].searchParams.get('q')).toBe('eastern')
@@ -552,7 +896,7 @@ describe('API catalog', () => {
     expect(urls['exchange-rate-current'].hostname).toBe('open.er-api.com')
     expect(urls['exchange-rate-current'].pathname).toBe('/v6/latest/SGD')
     expect(urls['circl-vulnerability'].hostname).toBe('vulnerability.circl.lu')
-    expect(urls['circl-vulnerability'].pathname).toBe('/api/cve/CVE-2021-44228')
+    expect(urls['circl-vulnerability'].pathname).toBe('/api/vulnerability/CVE-2021-44228')
   })
 
   it('builds the NHTSA vehicle recall request', () => {
@@ -673,6 +1017,147 @@ describe('API catalog', () => {
     })
     expect(validateParameters(aladhan, { latitude: '1.3521', longitude: '103.8198', method: '11', date: '2026-02-30' })).toEqual({
       date: 'Date must be a valid date in YYYY-MM-DD format.',
+    })
+  })
+
+  it('validates provider-documented machine-readable text formats before request construction', () => {
+    const color = getApiById('color-api')
+    const geoBoundaries = getApiById('geoboundaries-admin-boundaries')
+    const uniprot = getApiById('uniprot-protein')
+    const pdb = getApiById('rcsb-pdb-entry')
+    const firstEpss = getApiById('first-epss')
+    const circl = getApiById('circl-vulnerability')
+    expect(color).toBeDefined()
+    expect(geoBoundaries).toBeDefined()
+    expect(uniprot).toBeDefined()
+    expect(pdb).toBeDefined()
+    expect(firstEpss).toBeDefined()
+    expect(circl).toBeDefined()
+    if (!color || !geoBoundaries || !uniprot || !pdb || !firstEpss || !circl) return
+
+    const colorField = color.fields.find((field) => field.id === 'hex')
+    expect(colorField).toMatchObject({
+      pattern: '#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})',
+      patternDescription: 'must be a 3- or 6-digit hexadecimal color, with an optional leading #.',
+    })
+    expect(validateParameters(color, { hex: '#fff' })).toEqual({})
+    expect(validateParameters(color, { hex: '00ffa6' })).toEqual({})
+    expect(validateParameters(color, { hex: 'GGGGGG' })).toEqual({
+      hex: 'Hex color must be a 3- or 6-digit hexadecimal color, with an optional leading #.',
+    })
+
+    const geoCountryField = geoBoundaries.fields.find((field) => field.id === 'countryIso')
+    expect(geoCountryField).toMatchObject({
+      minLength: 3,
+      maxLength: 3,
+      pattern: '[A-Za-z]{3}',
+      patternDescription: 'must contain exactly three letters (an ISO 3166-1 alpha-3 code or the special ALL code).',
+    })
+    expect(validateParameters(geoBoundaries, { countryIso: 'ALL', adminLevel: 'ADM0' })).toEqual({})
+    expect(validateParameters(geoBoundaries, { countryIso: '123', adminLevel: 'ADM0' })).toEqual({
+      countryIso: 'Country ISO must contain exactly three letters (an ISO 3166-1 alpha-3 code or the special ALL code).',
+    })
+
+
+    const uniprotField = uniprot.fields.find((field) => field.id === 'accession')
+    expect(uniprotField).toMatchObject({
+      pattern: '[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2}',
+      patternDescription: 'must be a valid 6- or 10-character UniProtKB accession.',
+    })
+    expect(validateParameters(uniprot, { accession: 'P05067' })).toEqual({})
+    expect(validateParameters(uniprot, { accession: 'A0A023GPI8' })).toEqual({})
+    expect(validateParameters(uniprot, { accession: 'INVALID' })).toEqual({
+      accession: 'UniProt accession must be a valid 6- or 10-character UniProtKB accession.',
+    })
+
+    const pdbField = pdb.fields.find((field) => field.id === 'entryId')
+    expect(pdbField).toMatchObject({
+      minLength: 4,
+      maxLength: 12,
+      pattern: '(?:[A-Za-z0-9]{4}|[Pp][Dd][Bb]_0000[A-Za-z0-9]{4})',
+      patternDescription: 'must be a four-character PDB ID or a transitional pdb_0000XXXX extended alias for an entry that still has a legacy ID.',
+    })
+    expect(validateParameters(pdb, { entryId: '4HHB' })).toEqual({})
+    expect(validateParameters(pdb, { entryId: 'pdb_00004hhb' })).toEqual({})
+    expect(new URL(pdb.buildUrl({ entryId: 'pdb_00004hhb' })).pathname).toBe('/rest/v1/core/entry/4HHB')
+    expect(validateParameters(pdb, { entryId: 'pdb_10004hhb' })).toEqual({
+      entryId: 'PDB entry ID must be a four-character PDB ID or a transitional pdb_0000XXXX extended alias for an entry that still has a legacy ID.',
+    })
+
+    for (const api of [firstEpss, circl]) {
+      const cveField = api.fields.find((field) => field.id === 'cve')
+      expect(cveField).toMatchObject({
+        pattern: 'CVE-[0-9]{4}-[0-9]{4,}',
+        patternDescription: 'must use the CVE-YYYY-NNNN format with four or more sequence digits.',
+      })
+      expect(validateParameters(api, { cve: 'CVE-2021-44228' })).toEqual({})
+      expect(validateParameters(api, { cve: 'not-a-cve' })).toEqual({
+        cve: `${cveField?.label} must use the CVE-YYYY-NNNN format with four or more sequence digits.`,
+      })
+    }
+  })
+
+  it('validates provider-documented ISO country-code representations before provider execution', () => {
+    const unhcr = getApiById('unhcr-refugees')
+    const apple = getApiById('apple-itunes-search')
+    const zippopotam = getApiById('zippopotam-postcode')
+    expect(unhcr).toBeDefined()
+    expect(apple).toBeDefined()
+    expect(zippopotam).toBeDefined()
+    if (!unhcr || !apple || !zippopotam) return
+
+    const unhcrOrigin = unhcr.fields.find((field) => field.id === 'origin')
+    expect(unhcrOrigin).toMatchObject({
+      minLength: 3,
+      maxLength: 3,
+      pattern: '[A-Za-z]{3}',
+      patternDescription: 'must contain exactly three letters for an ISO 3166-1 alpha-3 country code.',
+    })
+    expect(validateParameters(unhcr, { origin: 'syr', year: '2025' })).toEqual({})
+    expect(validateParameters(unhcr, { origin: '123', year: '2025' })).toEqual({
+      origin: 'Origin country ISO3 must contain exactly three letters for an ISO 3166-1 alpha-3 country code.',
+    })
+
+    for (const [api, fieldId, valid, invalid] of [
+      [apple, 'country', 'sg', '12'],
+      [zippopotam, 'country', 'us', '1x'],
+    ] as const) {
+      const field = api.fields.find((candidate) => candidate.id === fieldId)
+      expect(field).toMatchObject({
+        minLength: 2,
+        maxLength: 2,
+        pattern: '[A-Za-z]{2}',
+        patternDescription: 'must contain exactly two letters for an ISO 3166-1 alpha-2 country code.',
+      })
+      expect(validateParameters(api, { ...getDefaultParameters(api), [fieldId]: valid })).toEqual({})
+      expect(validateParameters(api, { ...getDefaultParameters(api), [fieldId]: invalid })).toEqual({
+        [fieldId]: `${field?.label} must contain exactly two letters for an ISO 3166-1 alpha-2 country code.`,
+      })
+    }
+  })
+
+  it('keeps Apple iTunes media and entity semantics compatible in one declared result-type field', () => {
+    const apple = getApiById('apple-itunes-search')
+    expect(apple).toBeDefined()
+    if (!apple) return
+
+    expect(apple.fields.map((field) => field.id)).toEqual(['query', 'entity', 'country', 'limit'])
+    const entity = apple.fields.find((field) => field.id === 'entity')
+    expect(entity).toMatchObject({ type: 'select', defaultValue: 'song' })
+    expect(entity?.options?.map((option) => option.value)).toEqual([
+      'song', 'musicTrack', 'album', 'musicArtist', 'musicVideo', 'mix', 'podcast', 'podcastAuthor',
+    ])
+
+    const songUrl = new URL(apple.buildUrl({ ...getDefaultParameters(apple), entity: 'song' }))
+    expect(songUrl.searchParams.get('media')).toBe('music')
+    expect(songUrl.searchParams.get('entity')).toBe('song')
+
+    const podcastUrl = new URL(apple.buildUrl({ ...getDefaultParameters(apple), entity: 'podcast' }))
+    expect(podcastUrl.searchParams.get('media')).toBe('podcast')
+    expect(podcastUrl.searchParams.get('entity')).toBe('podcast')
+
+    expect(validateParameters(apple, { ...getDefaultParameters(apple), entity: 'bogus' })).toEqual({
+      entity: 'Result type must be one of the supported options.',
     })
   })
 

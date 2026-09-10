@@ -58,8 +58,11 @@ export type ApiField = {
   placeholder?: string
   min?: number
   max?: number
+  minimumFromField?: string
   minLength?: number
   maxLength?: number
+  pattern?: string
+  patternDescription?: string
   options?: FieldOption[]
 }
 
@@ -69,6 +72,7 @@ export type ApiDemo = {
   provider: string
   category: ApiCategory
   description: string
+  keywords?: string[]
   documentationUrl: string
   accent: string
   monogram: string
@@ -83,6 +87,31 @@ export type ApiDemo = {
   usageNote?: string
   agentExecution?: Extract<AgentExecutionPolicy, { mode: 'manual-only' }>
   automatedVerification?: Extract<AutomatedVerificationPolicy, { mode: 'cadence-limited' }>
+}
+
+const SEARCH_STOP_WORDS = new Set([
+  'a', 'an', 'and', 'api', 'apis', 'are', 'by', 'can', 'could', 'find', 'for', 'from', 'get', 'give', 'help', 'how', 'i', 'in', 'into', 'is', 'me', 'my',
+  'need', 'of', 'on', 'or', 'please', 'show', 'tell', 'the', 'to', 'use', 'using', 'want', 'what', 'when', 'where', 'which', 'with', 'would', 'you',
+])
+
+const normalizeSearchText = (value: string): string =>
+  value.normalize('NFKD').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+
+export const matchesApiSearch = (api: Pick<ApiDemo, 'id' | 'name' | 'provider' | 'category' | 'description' | 'keywords'>, query: string): boolean => {
+  const normalizedQuery = normalizeSearchText(query)
+  if (!normalizedQuery) return true
+  const rawTokens = normalizedQuery.split(/\s+/).filter(Boolean)
+  const meaningfulTokens = rawTokens.filter((token) => !SEARCH_STOP_WORDS.has(token))
+  const tokens = meaningfulTokens.length ? meaningfulTokens : rawTokens
+  const haystack = normalizeSearchText([
+    api.id,
+    api.name,
+    api.provider,
+    api.category,
+    api.description,
+    ...(api.keywords ?? []),
+  ].join(' '))
+  return tokens.every((token) => haystack.includes(token))
 }
 
 const encode = (value: string) => encodeURIComponent(value.trim())
@@ -105,14 +134,66 @@ const toDmyDate = (value: string): string => {
   return `${day}-${month}-${year}`
 }
 
-const clampInt = (value: string, min: number, max: number, fallback: number): number =>
-  Math.min(max, Math.max(min, Number.parseInt(value, 10) || fallback))
+const clampInt = (value: string, min: number, max: number, fallback: number): number => {
+  const parsed = Number.parseInt(value, 10)
+  return Math.min(max, Math.max(min, Number.isNaN(parsed) ? fallback : parsed))
+}
 
 const sparqlStringLiteral = (value: string): string =>
   `"${value.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\r/g, '\\r').replace(/\n/g, '\\n')}"`
 
 const numberField = (id: string, params: Omit<ApiField, 'id' | 'type'>): ApiField => ({ id, type: 'number', ...params })
 const textField = (id: string, params: Omit<ApiField, 'id' | 'type'>): ApiField => ({ id, type: 'text', ...params })
+
+const CVE_ID_PATTERN = 'CVE-[0-9]{4}-[0-9]{4,}'
+const CVE_ID_PATTERN_DESCRIPTION = 'must use the CVE-YYYY-NNNN format with four or more sequence digits.'
+const cveField = (label: string): ApiField => textField('cve', {
+  label,
+  defaultValue: 'CVE-2021-44228',
+  placeholder: 'e.g. CVE-2021-44228',
+  pattern: CVE_ID_PATTERN,
+  patternDescription: CVE_ID_PATTERN_DESCRIPTION,
+  help: 'Enter a published CVE identifier using the CVE-YYYY-NNNN format.',
+})
+
+
+const appleItunesEntityOptions: FieldOption[] = [
+  { label: 'Music · Song', value: 'song' },
+  { label: 'Music · Track', value: 'musicTrack' },
+  { label: 'Music · Album', value: 'album' },
+  { label: 'Music · Artist', value: 'musicArtist' },
+  { label: 'Music · Video', value: 'musicVideo' },
+  { label: 'Music · Mix', value: 'mix' },
+  { label: 'Podcast · Show', value: 'podcast' },
+  { label: 'Podcast · Author', value: 'podcastAuthor' },
+]
+const appleItunesPodcastEntities = new Set(['podcast', 'podcastAuthor'])
+
+const aladhanMethodOptions: FieldOption[] = [
+  { value: '11', label: '11 — Majlis Ugama Islam Singapura, Singapore' },
+  { value: '17', label: '17 — JAKIM, Malaysia' },
+  { value: '3', label: '3 — Muslim World League' },
+  { value: '2', label: '2 — Islamic Society of North America (ISNA)' },
+  { value: '5', label: '5 — Egyptian General Authority of Survey' },
+  { value: '4', label: '4 — Umm Al-Qura University, Makkah' },
+  { value: '1', label: '1 — University of Islamic Sciences, Karachi' },
+  { value: '7', label: '7 — Institute of Geophysics, University of Tehran' },
+  { value: '0', label: '0 — Shia Ithna-Ashari, Leva Institute, Qum' },
+  { value: '8', label: '8 — Gulf Region' },
+  { value: '9', label: '9 — Kuwait' },
+  { value: '10', label: '10 — Qatar' },
+  { value: '12', label: '12 — Union Organization Islamic de France' },
+  { value: '13', label: '13 — Diyanet İşleri Başkanlığı, Turkey' },
+  { value: '14', label: '14 — Spiritual Administration of Muslims of Russia' },
+  { value: '15', label: '15 — Moonsighting Committee Worldwide' },
+  { value: '16', label: '16 — Dubai' },
+  { value: '18', label: '18 — Tunisia' },
+  { value: '19', label: '19 — Algeria' },
+  { value: '20', label: '20 — Kementerian Agama Republik Indonesia' },
+  { value: '21', label: '21 — Morocco' },
+  { value: '22', label: '22 — Comunidade Islamica de Lisboa' },
+  { value: '23', label: '23 — Ministry of Awqaf, Islamic Affairs and Holy Places, Jordan' },
+]
 
 const latLongFields = (overrides: {
   latitude?: Partial<Pick<ApiField, 'defaultValue' | 'min' | 'max' | 'help'>>
@@ -302,6 +383,14 @@ const fixedApi = ({ endpoint, ...api }: FixedApi): ApiDemo => ({
 const localNow = new Date()
 const isoDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 const today = isoDate(localNow)
+const federalFiscalYearForDate = (date: Date) => date.getUTCMonth() >= 9 ? date.getUTCFullYear() + 1 : date.getUTCFullYear()
+const currentFederalFiscalYear = federalFiscalYearForDate(localNow)
+const defaultFederalFiscalYear = currentFederalFiscalYear - 1
+const federalFiscalYearPeriod = (fiscalYear: number) => ({
+  start_date: `${fiscalYear - 1}-10-01`,
+  end_date: `${fiscalYear}-09-30`,
+  date_type: 'new_awards_only',
+})
 const compactDate = (date: Date) => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`
 const daysAgo = (days: number) => {
   const date = new Date(localNow)
@@ -340,6 +429,7 @@ const additionalInteractiveApis: ApiDemo[] = [
   {
     id: 'sunrise-sunset', name: 'Sunrise & Sunset', provider: 'Sunrise-Sunset.org', category: 'Calendar',
     description: 'Calculate sunrise, sunset, twilight, golden hour, solar noon, and moon data for a location.',
+    keywords: ['sunrise time', 'sunset time', 'solar times', 'golden hour'],
     documentationUrl: 'https://sunrise-sunset.org/api', accent: '#f59e0b', monogram: 'SS',
     fields: [
       ...latLongFields(),
@@ -510,10 +600,11 @@ const importedRecommendedApis: ApiDemo[] = [
     accent: '#111827', monogram: 'DV',
   }),
   fixedApi({
-    id: 'fiscal-data-treasury', name: 'U.S. Treasury Agency Profile', provider: 'USAspending.gov', category: 'Finance',
-    description: 'Inspect the Department of the Treasury mission, fiscal year, agency code, and federal spending profile.',
-    documentationUrl: 'https://api.usaspending.gov/docs/', endpoint: 'https://api.usaspending.gov/api/v2/agency/020/',
+    id: 'fiscal-data-treasury', name: 'U.S. Treasury Agency Overview', provider: 'USAspending.gov', category: 'Finance',
+    description: 'Inspect the Department of the Treasury agency overview, including its mission, identifiers, current fiscal-year context, subtier count, and official reference links.',
+    documentationUrl: 'https://api.usaspending.gov/docs/endpoints', endpoint: 'https://api.usaspending.gov/api/v2/agency/020/',
     accent: '#1d4ed8', monogram: 'FT',
+    usageNote: 'This USAspending endpoint is an agency overview. It does not itself return award obligations or budgetary-resource totals; those are separate agency endpoints.',
   }),
   fixedApi({
     id: 'github', name: 'GitHub Public Repos', provider: 'GitHub', category: 'Developer',
@@ -605,36 +696,59 @@ const importedRecommendedApis: ApiDemo[] = [
     documentationUrl: 'https://www.gov.uk/bank-holidays', endpoint: 'https://www.gov.uk/bank-holidays.json',
     accent: '#1d70b8', monogram: 'UK',
   }),
-  fixedApi({
-    id: 'usaspending', name: 'USAspending API', provider: 'USAspending.gov', category: 'Government',
-    description: 'Search a sample of recent United States federal contract awards.',
-    documentationUrl: 'https://github.com/fedspendingtransparency/usaspending-api/blob/master/usaspending_api/api_contracts/contracts/v2/search/spending_by_award.md', endpoint: 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+  {
+    id: 'usaspending', name: 'USAspending Contract Awards', provider: 'USAspending.gov', category: 'Government',
+    description: 'Inspect new prime federal contract awards whose base transaction date falls within a selected federal fiscal year, sorted by Base Obligation Date.',
+    documentationUrl: 'https://github.com/fedspendingtransparency/usaspending-api/blob/master/usaspending_api/api_contracts/contracts/v2/search/spending_by_award.md',
     accent: '#0f4c81', monogram: 'US', method: 'POST',
-    buildBody: () => {
-      const year = new Date().getUTCFullYear() - 1
+    usageNote: 'Federal fiscal years run from October 1 through September 30. This demo sets date_type=new_awards_only so only awards whose base transaction date falls inside the selected fiscal year are returned, searches prime contract award types A-D, and sorts by Base Obligation Date descending. For contract awards, USAspending maps Award Amount to the award total_obligation field; it is not a transaction amount or potential award ceiling.',
+    fields: [
+      numberField('fiscalYear', { label: 'Federal fiscal year', defaultValue: String(defaultFederalFiscalYear), min: 2008, max: currentFederalFiscalYear, help: 'Choose FY2008 through the current federal fiscal year. The request uses new_awards_only, so the award’s base transaction date must fall between October 1 and September 30.' }),
+      limitField({ label: 'Awards', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 new prime contract awards for the selected federal fiscal year.' }),
+    ],
+    buildUrl: () => 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
+    buildBody: ({ fiscalYear = String(defaultFederalFiscalYear), limit = '8' }) => {
+      const safeFiscalYear = clampInt(fiscalYear, 2008, currentFederalFiscalYear, defaultFederalFiscalYear)
+      const safeLimit = clampInt(limit, 1, 20, 8)
       return {
         filters: {
-          time_period: [{ start_date: `${year}-01-01`, end_date: `${year}-12-31` }],
+          time_period: [federalFiscalYearPeriod(safeFiscalYear)],
           award_type_codes: ['A', 'B', 'C', 'D'],
         },
-        fields: ['Award ID', 'Recipient Name', 'Award Amount'],
+        fields: [
+          'Award ID',
+          'Recipient Name',
+          'Award Amount',
+          'Base Obligation Date',
+          'Awarding Agency',
+          'Awarding Sub Agency',
+          'Funding Agency',
+          'Funding Sub Agency',
+          'Contract Award Type',
+          'Description',
+        ],
         page: 1,
-        limit: 8,
+        limit: safeLimit,
+        sort: 'Base Obligation Date',
+        order: 'desc',
         subawards: false,
       }
     },
-  }),
+  },
   fixedApi({
     id: 'usgs', name: 'USGS Earthquakes', provider: 'U.S. Geological Survey', category: 'Geo',
     description: 'Map earthquakes of magnitude 2.5 or greater reported during the past day.',
+    keywords: ['earthquake data', 'seismic events', 'earthquake feed'],
     documentationUrl: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/geojson.php', endpoint: 'https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/2.5_day.geojson',
     accent: '#92400e', monogram: 'EQ',
   }),
   fixedApi({
     id: 'wikidata-sparql', name: 'Wikidata SPARQL', provider: 'Wikimedia Foundation', category: 'Knowledge',
-    description: 'Run a small SPARQL query for city entities and English labels.',
+    description: 'Run a bounded Wikidata Query Service SPARQL query for entities classified as cities and their English labels.',
     documentationUrl: 'https://www.wikidata.org/wiki/Wikidata:SPARQL_query_service', endpoint: 'https://query.wikidata.org/sparql?query=SELECT%20%3Fitem%20%3FitemLabel%20WHERE%20%7B%20%3Fitem%20wdt%3AP31%20wd%3AQ515%20.%20SERVICE%20wikibase%3Alabel%20%7B%20bd%3AserviceParam%20wikibase%3Alanguage%20%22en%22%20.%20%7D%20%7D%20LIMIT%208&format=json',
     accent: '#339966', monogram: 'WQ',
+    headers: { Accept: 'application/sparql-results+json', 'Api-User-Agent': 'Public-API/0.1 (https://yapweijun1996.github.io/Public-API/)' },
+    usageNote: 'Wikidata Query Service is rate-limited and can lag behind Wikidata edits. Public-API identifies its browser requests with Wikimedia’s Api-User-Agent fallback for browser JavaScript; keep queries bounded and back off on 429 responses.',
   }),
   fixedApi({
     id: 'world-bank-gdp', name: 'World Bank GDP', provider: 'World Bank', category: 'Economy',
@@ -653,12 +767,14 @@ const importedRecommendedApis: ApiDemo[] = [
     description: 'Explore monthly SGD/MYR reference rates from the euro-era starting point in 1999.',
     documentationUrl: 'https://frankfurter.dev/', accent: '#0f766e', monogram: 'FX',
     fields: [
-      { id: 'from', label: 'Start date', type: 'text', defaultValue: '1999-01-04', placeholder: 'YYYY-MM-DD', help: 'ECB history begins at the euro-era starting point.' },
-      { id: 'to', label: 'End date', type: 'text', defaultValue: today, placeholder: 'YYYY-MM-DD', help: 'Use an ISO date up to today.' },
+      { id: 'from', label: 'Start date', type: 'date', defaultValue: '1999-01-04', help: 'Use an ISO date in YYYY-MM-DD format. ECB history begins at the euro-era starting point.' },
+      { id: 'to', label: 'End date', type: 'date', defaultValue: today, minimumFromField: 'from', help: 'Use an ISO date in YYYY-MM-DD format on or after the start date, up to today.' },
       { id: 'group', label: 'Grouping', type: 'select', defaultValue: 'month', help: 'Monthly grouping keeps the long history compact.', options: [{ label: 'Monthly', value: 'month' }, { label: 'Weekly', value: 'week' }] },
     ],
     buildUrl: ({ from = '1999-01-04', to = today, group = 'month' }) => {
-      const query = new URLSearchParams({ from, to, base: 'SGD', quotes: 'MYR', providers: 'ECB', group })
+      const safeFrom = isIsoCalendarDate(from.trim()) ? from.trim() : '1999-01-04'
+      const safeTo = isIsoCalendarDate(to.trim()) ? to.trim() : today
+      const query = new URLSearchParams({ from: safeFrom, to: safeTo, base: 'SGD', quotes: 'MYR', providers: 'ECB', group })
       return `https://api.frankfurter.dev/v2/rates?${query.toString()}`
     },
   },
@@ -908,11 +1024,13 @@ const nextKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://open-meteo.com/en/docs/historical-weather-api', accent: '#2563eb', monogram: 'HW',
     fields: [
       ...latLongFields(),
-      { id: 'startDate', label: 'Start date', type: 'text', defaultValue: '2025-01-01', placeholder: 'YYYY-MM-DD', help: 'Use an ISO date supported by the historical archive.' },
-      { id: 'endDate', label: 'End date', type: 'text', defaultValue: '2025-01-14', placeholder: 'YYYY-MM-DD', help: 'Choose an end date on or after the start date.' },
+      { id: 'startDate', label: 'Start date', type: 'date', defaultValue: '2025-01-01', help: 'Open-Meteo requires an ISO date in YYYY-MM-DD format.' },
+      { id: 'endDate', label: 'End date', type: 'date', defaultValue: '2025-01-14', minimumFromField: 'startDate', help: 'Open-Meteo requires YYYY-MM-DD; choose an end date on or after the start date.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startDate = '2025-01-01', endDate = '2025-01-14' }) => {
-      const params = new URLSearchParams({ latitude, longitude, start_date: startDate.trim() || '2025-01-01', end_date: endDate.trim() || '2025-01-14', daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone: 'auto' })
+      const safeStart = isIsoCalendarDate(startDate.trim()) ? startDate.trim() : '2025-01-01'
+      const safeEnd = isIsoCalendarDate(endDate.trim()) ? endDate.trim() : '2025-01-14'
+      const params = new URLSearchParams({ latitude, longitude, start_date: safeStart, end_date: safeEnd, daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone: 'auto' })
       return `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`
     },
   },
@@ -1029,9 +1147,9 @@ const verifiedKeylessApis: ApiDemo[] = [
       queryField({ label: 'Package search', defaultValue: 'react', placeholder: 'e.g. react', help: 'Search package names and descriptions.' }),
       limitField({ label: 'Packages', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 package records.' }),
     ],
-    buildUrl: ({ query = 'react', count = '8' }) => {
-      const safeCount = clampInt(count, 1, 20, 8)
-      return `https://packagist.org/search.json?${new URLSearchParams({ q: query.trim() || 'react', per_page: String(safeCount) }).toString()}`
+    buildUrl: ({ query = 'react', limit = '8' }) => {
+      const safeLimit = clampInt(limit, 1, 20, 8)
+      return `https://packagist.org/search.json?${new URLSearchParams({ q: query.trim() || 'react', per_page: String(safeLimit) }).toString()}`
     },
   },
   {
@@ -1066,7 +1184,7 @@ const verifiedKeylessApis: ApiDemo[] = [
       limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 records.' }),
     ],
     buildUrl: () => 'https://graphql.anilist.co',
-    buildBody: ({ query = 'Fullmetal Alchemist', mediaType = 'ANIME', page = '1', count = '6' }) => ({
+    buildBody: ({ query = 'Fullmetal Alchemist', mediaType = 'ANIME', page = '1', limit = '6' }) => ({
       query: `query ($search: String, $page: Int, $perPage: Int, $type: MediaType) {
         Page(page: $page, perPage: $perPage) {
           pageInfo {
@@ -1093,7 +1211,7 @@ const verifiedKeylessApis: ApiDemo[] = [
       variables: {
         search: query.trim() || 'Fullmetal Alchemist',
         page: clampInt(page, 1, 10, 1),
-        perPage: clampInt(count, 1, 20, 6),
+        perPage: clampInt(limit, 1, 20, 6),
         type: mediaType.toUpperCase() === 'MANGA' ? 'MANGA' : 'ANIME',
       },
     }),
@@ -1108,9 +1226,9 @@ const verifiedKeylessApis: ApiDemo[] = [
       { id: 'contentType', label: 'Media type', type: 'select', defaultValue: 'image', help: 'Query images or audio separately.', options: [{ label: 'Images', value: 'image' }, { label: 'Audio', value: 'audio' }] },
       limitField({ label: 'Results', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 media records.' }),
     ],
-    buildUrl: ({ query = 'space', contentType = 'image', count = '8' }) => {
-      const safeCount = clampInt(count, 1, 20, 8)
-      return `https://api.openverse.org/v1/${contentType === 'audio' ? 'audio' : 'images'}/?${new URLSearchParams({ q: query.trim() || 'space', page_size: String(safeCount), page: '1' }).toString()}`
+    buildUrl: ({ query = 'space', contentType = 'image', limit = '8' }) => {
+      const safeLimit = clampInt(limit, 1, 20, 8)
+      return `https://api.openverse.org/v1/${contentType === 'audio' ? 'audio' : 'images'}/?${new URLSearchParams({ q: query.trim() || 'space', page_size: String(safeLimit), page: '1' }).toString()}`
     },
   },
   {
@@ -1118,22 +1236,23 @@ const verifiedKeylessApis: ApiDemo[] = [
     description: 'Search music and media from iTunes, including songs, artists, albums, podcasts, and media previews.',
     documentationUrl: 'https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/iTuneSearchAPI/Searching.html',
     accent: '#f4af3f', monogram: 'ITN',
-    usageNote: 'Honor Apple attribution and preview usage terms for artwork and sample clips.',
+    usageNote: 'Apple defines entity values relative to the selected media type and documents an approximate 20 calls/minute Search API limit subject to change. This demo exposes compatible music/podcast result types and derives the media parameter from that declared entity. Honor Apple attribution and preview usage terms for artwork and sample clips.',
     fields: [
       queryField({ label: 'Search term', defaultValue: 'Beatles', placeholder: 'e.g. Beatles', help: 'Search across iTunes public indexes.' }),
-      { id: 'media', label: 'Media', type: 'select', defaultValue: 'music', help: 'Choose media category.', options: [{ label: 'Music', value: 'music' }, { label: 'Podcast', value: 'podcast' }] },
-      { id: 'entity', label: 'Entity', type: 'text', defaultValue: 'song', placeholder: 'e.g. song', help: 'Use iTunes entity filters such as song, album, musicArtist.' },
-      { id: 'country', label: 'Country', type: 'text', defaultValue: 'sg', placeholder: 'e.g. sg', help: 'Two-letter ISO country code for localized results.' },
+      { id: 'entity', label: 'Result type', type: 'select', defaultValue: 'song', help: 'Choose one result entity; Public-API derives the compatible Apple media category from this same selection.', options: appleItunesEntityOptions },
+      { id: 'country', label: 'Country', type: 'text', defaultValue: 'sg', placeholder: 'e.g. sg', minLength: 2, maxLength: 2, pattern: '[A-Za-z]{2}', patternDescription: 'must contain exactly two letters for an ISO 3166-1 alpha-2 country code.', help: 'Use a two-letter ISO 3166-1 alpha-2 country code for the iTunes Store storefront, such as SG or US.' },
       limitField({ label: 'Results', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 results.' }),
     ],
-    buildUrl: ({ query = 'Beatles', media = 'music', entity = 'song', country = 'sg', count = '8' }) => {
-      const safeCount = clampInt(count, 1, 20, 8)
+    buildUrl: ({ query = 'Beatles', entity = 'song', country = 'sg', limit = '8' }) => {
+      const safeLimit = clampInt(limit, 1, 20, 8)
+      const safeEntity = appleItunesEntityOptions.some((option) => option.value === entity) ? entity : 'song'
+      const media = appleItunesPodcastEntities.has(safeEntity) ? 'podcast' : 'music'
       return `https://itunes.apple.com/search?${new URLSearchParams({
         term: query.trim() || 'Beatles',
-        media: media.trim() || 'music',
-        entity: entity.trim() || 'song',
-        country: country.trim() || 'sg',
-        limit: String(safeCount),
+        media,
+        entity: safeEntity,
+        country: (country.trim() || 'sg').toLowerCase(),
+        limit: String(safeLimit),
       }).toString()}`
     },
   },
@@ -1163,37 +1282,38 @@ const verifiedKeylessApis: ApiDemo[] = [
     id: 'aladhan-prayer-times', name: 'AlAdhan Prayer Times', provider: 'Al-Adhan', category: 'Calendar',
     description: 'Return prayer timings, Hijri date metadata, and calculation data from coordinates.',
     documentationUrl: 'https://aladhan.com/prayer-times-api', accent: '#5a6ee1', monogram: 'ADH',
-    usageNote: 'Use the coordinate endpoint with Method 11 for this catalog’s Singapore-style timing preset.',
+    usageNote: 'The calculation-method selector is limited to AlAdhan’s current built-in method IDs. Method 11 is the default Singapore preset. Custom method 99 is excluded because this demo does not expose the required methodSettings contract.',
     fields: [
       ...latLongFields({
         latitude: { defaultValue: '1.3521', help: 'Use a valid WGS84 latitude from -90 to 90.' },
         longitude: { defaultValue: '103.8198', help: 'Use a valid WGS84 longitude from -180 to 180.' },
       }),
-      { id: 'method', label: 'Calculation method', type: 'number', defaultValue: '11', min: 0, max: 99, help: 'Method 11 is used in the catalog for Singapore-compatible timing behavior.' },
+      { id: 'method', label: 'Calculation method', type: 'select', defaultValue: '11', help: 'Choose one built-in method advertised by AlAdhan. Method 11 is the Singapore preset.', options: aladhanMethodOptions },
       { id: 'date', label: 'Date', type: 'date', defaultValue: today, help: 'Use a Gregorian date in YYYY-MM-DD format. Public-API converts it to AlAdhan’s DD-MM-YYYY path format.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', method = '11', date = today }) => {
-      const safeMethod = clampInt(method, 0, 99, 11)
+      const safeMethod = aladhanMethodOptions.some((option) => option.value === method) ? method : '11'
       return `https://api.aladhan.com/v1/timings/${toDmyDate(date || today)}?${new URLSearchParams({
         latitude: latitude.trim() || '1.3521',
         longitude: longitude.trim() || '103.8198',
-        method: String(safeMethod),
+        method: safeMethod,
       }).toString()}`
     },
   },
   {
     id: 'jolpica-f1', name: 'Jolpica F1 Data', provider: 'Jolpica', category: 'Sports',
-    description: 'Load Formula 1 season data including races, drivers, and constructors from the Ergast-compatible Jolpica API.',
+    description: 'Browse Formula 1 season driver, constructor, or race-catalogue records from the Ergast-compatible Jolpica API.',
     documentationUrl: 'https://github.com/jolpica/jolpica-f1/blob/main/docs/README.md', accent: '#e10600', monogram: 'JOL', risk: 'Review',
+    usageNote: 'The dataset selector changes the provider response shape: drivers and constructors are season participation catalogues, while races are the season calendar. These routes are not standings or race-result endpoints.',
     fields: [
       { id: 'season', label: 'Season', type: 'select', defaultValue: '2025', help: 'Choose an F1 season.', options: [{ label: '2025', value: '2025' }, { label: '2024', value: '2024' }, { label: '2023', value: '2023' }] },
       { id: 'dataset', label: 'Dataset', type: 'select', defaultValue: 'drivers', help: 'Pick a public F1 data table.', options: [{ label: 'Drivers', value: 'drivers' }, { label: 'Constructors', value: 'constructors' }, { label: 'Races', value: 'races' }] },
       limitField({ label: 'Rows', defaultValue: '8', min: 1, max: 30, help: 'Return between 1 and 30 rows.' }),
     ],
-    buildUrl: ({ season = '2025', dataset = 'drivers', count = '8' }) => {
-      const safeCount = clampInt(count, 1, 30, 8)
+    buildUrl: ({ season = '2025', dataset = 'drivers', limit = '8' }) => {
+      const safeLimit = clampInt(limit, 1, 30, 8)
       const safeDataset = ['drivers', 'constructors', 'races'].includes(dataset) ? dataset : 'drivers'
-      return `https://api.jolpi.ca/ergast/f1/${season || '2025'}/${safeDataset}.json?${new URLSearchParams({ limit: String(safeCount) }).toString()}`
+      return `https://api.jolpi.ca/ergast/f1/${season || '2025'}/${safeDataset}.json?${new URLSearchParams({ limit: String(safeLimit) }).toString()}`
     },
   },
   {
@@ -1205,9 +1325,9 @@ const verifiedKeylessApis: ApiDemo[] = [
       { id: 'tag', label: 'Content type', type: 'select', defaultValue: 'story', help: 'Choose stories or comments.', options: [{ label: 'Stories', value: 'story' }, { label: 'Comments', value: 'comment' }, { label: 'Stories and comments', value: 'story,comment' }] },
       limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 search hits.' }),
     ],
-    buildUrl: ({ query = 'OpenAI', tag = 'story', count = '6' }) => {
-      const safeCount = clampInt(count, 1, 20, 6)
-      return `https://hn.algolia.com/api/v1/search?${new URLSearchParams({ query: query.trim() || 'OpenAI', tags: tag || 'story', hitsPerPage: String(safeCount) }).toString()}`
+    buildUrl: ({ query = 'OpenAI', tag = 'story', limit = '6' }) => {
+      const safeLimit = clampInt(limit, 1, 20, 6)
+      return `https://hn.algolia.com/api/v1/search?${new URLSearchParams({ query: query.trim() || 'OpenAI', tags: tag || 'story', hitsPerPage: String(safeLimit) }).toString()}`
     },
   },
   {
@@ -1216,58 +1336,61 @@ const verifiedKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://www.bankofcanada.ca/valet-api-how-to/', accent: '#0066cc', monogram: 'BOC', risk: 'Review',
     fields: [
       { id: 'series', label: 'Series', type: 'text', defaultValue: 'FXUSDCAD', placeholder: 'e.g. FXUSDCAD', help: 'Use a public Bank of Canada series code.' },
-      { id: 'startDate', label: 'Start date', type: 'text', defaultValue: isoDate(daysAgo(30)), placeholder: 'YYYY-MM-DD', help: 'Use YYYY-MM-DD or YYYYMMDD.' },
-      { id: 'endDate', label: 'End date', type: 'text', defaultValue: today, placeholder: 'YYYY-MM-DD', help: 'Use YYYY-MM-DD or YYYYMMDD.' },
+      { id: 'startDate', label: 'Start date', type: 'date', defaultValue: isoDate(daysAgo(30)), help: 'Bank of Canada Valet requires YYYY-MM-DD.' },
+      { id: 'endDate', label: 'End date', type: 'date', defaultValue: today, minimumFromField: 'startDate', help: 'Bank of Canada Valet requires YYYY-MM-DD on or after the start date.' },
     ],
     buildUrl: ({ series = 'FXUSDCAD', startDate = isoDate(daysAgo(30)), endDate = today }) => {
       const fallbackStart = isoDate(daysAgo(30))
-      const safeStart = /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : fallbackStart
-      const safeEnd = /^\d{4}-\d{2}-\d{2}$/.test(endDate) ? endDate : today
+      const safeStart = isIsoCalendarDate(startDate) ? startDate : fallbackStart
+      const safeEnd = isIsoCalendarDate(endDate) ? endDate : today
       return `https://www.bankofcanada.ca/valet/observations/${encode(series || 'FXUSDCAD')}/json?${new URLSearchParams({ start_date: safeStart, end_date: safeEnd }).toString()}`
     },
   },
   {
     id: 'swiss-transit-connections', name: 'Swiss Transit Connections', provider: 'Swiss Mobility', category: 'Utility',
     description: 'Search Swiss public-transit connections by origin and destination with transfers and timing metadata.',
+    keywords: ['train connections', 'rail journey', 'public transport'],
     documentationUrl: 'https://transport.opendata.ch/docs.html', accent: '#009966', monogram: 'SCT',
     fields: [
       { id: 'from', label: 'Origin', type: 'text', defaultValue: 'Zurich', placeholder: 'e.g. Zurich', help: 'Enter a station or place name.' },
       { id: 'to', label: 'Destination', type: 'text', defaultValue: 'Geneva', placeholder: 'e.g. Geneva', help: 'Enter a destination station or place name.' },
       limitField({ label: 'Connections', defaultValue: '6', min: 1, max: 10, help: 'Return between 1 and 10 connections.' }),
     ],
-    buildUrl: ({ from = 'Zurich', to = 'Geneva', count = '6' }) => {
-      const safeCount = clampInt(count, 1, 10, 6)
-      return `https://transport.opendata.ch/v1/connections?${new URLSearchParams({ from: from.trim() || 'Zurich', to: to.trim() || 'Geneva', limit: String(safeCount) }).toString()}`
+    buildUrl: ({ from = 'Zurich', to = 'Geneva', limit = '6' }) => {
+      const safeLimit = clampInt(limit, 1, 10, 6)
+      return `https://transport.opendata.ch/v1/connections?${new URLSearchParams({ from: from.trim() || 'Zurich', to: to.trim() || 'Geneva', limit: String(safeLimit) }).toString()}`
     },
   },
   {
     id: 'nasa-power-climate', name: 'NASA POWER Climate', provider: 'NASA POWER', category: 'Environment',
     description: 'Fetch climate and weather variables such as temperature, humidity, solar radiation, and precipitation.',
+    keywords: ['climate data by coordinates', 'weather by coordinates', 'daily climate variables'],
     documentationUrl: 'https://power.larc.nasa.gov/docs/', accent: '#0b3d91', monogram: 'PWR', risk: 'Review',
     fields: [
       ...latLongFields(),
-      { id: 'startDate', label: 'Start date', type: 'text', defaultValue: compactDate(daysAgo(30)), placeholder: 'YYYY-MM-DD', help: 'Use YYYY-MM-DD or YYYYMMDD.' },
-      { id: 'endDate', label: 'End date', type: 'text', defaultValue: today, placeholder: 'YYYY-MM-DD', help: 'Use YYYY-MM-DD or YYYYMMDD.' },
+      { id: 'startDate', label: 'Start date', type: 'date', defaultValue: isoDate(daysAgo(30)), help: 'Choose an ISO date in YYYY-MM-DD format. Public-API converts it to NASA POWER’s YYYYMMDD wire format.' },
+      { id: 'endDate', label: 'End date', type: 'date', defaultValue: today, minimumFromField: 'startDate', help: 'Choose an ISO date in YYYY-MM-DD format on or after the start date. Public-API converts it to NASA POWER’s YYYYMMDD wire format.' },
       { id: 'parameters', label: 'Parameters', type: 'text', defaultValue: 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN', help: 'Comma-separated POWER parameter codes.' },
     ],
-    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startDate = compactDate(daysAgo(30)), endDate = today, parameters = 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN' }) => {
-      const safeStart = (startDate || compactDate(daysAgo(30))).replace(/\D/g, '')
-      const safeEnd = (endDate || today).replace(/\D/g, '')
+    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startDate = isoDate(daysAgo(30)), endDate = today, parameters = 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN' }) => {
+      const fallbackStart = isoDate(daysAgo(30))
+      const safeStart = isIsoCalendarDate(startDate.trim()) ? startDate.trim() : fallbackStart
+      const safeEnd = isIsoCalendarDate(endDate.trim()) ? endDate.trim() : today
       return `https://power.larc.nasa.gov/api/temporal/daily/point?${new URLSearchParams({
         parameters: parameters.trim() || 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN',
         community: 'AG',
         latitude,
         longitude,
-        start: safeStart,
-        end: safeEnd,
+        start: safeStart.replace(/-/g, ''),
+        end: safeEnd.replace(/-/g, ''),
         format: 'JSON',
       }).toString()}`
     },
   },
   {
     id: 'open-meteo-elevation', name: 'Open-Meteo Elevation', provider: 'Open-Meteo', category: 'Geo',
-    description: 'Fetch terrain elevation in meters for selected coordinates from Open-Meteo’s global model.',
-    documentationUrl: 'https://open-meteo.com/en/docs/elevation-api', accent: '#047857', monogram: 'ELV', usageNote: 'Use returned elevation for non-critical use. Data is typically around 90-metre terrain resolution.',
+    description: 'Fetch terrain elevation in meters for selected WGS84 coordinates from the Copernicus DEM 2021 GLO-90 dataset.',
+    documentationUrl: 'https://open-meteo.com/en/docs/elevation-api', accent: '#047857', monogram: 'ELV', usageNote: 'Copernicus DEM 2021 GLO-90 terrain data at 90 m resolution. Open-Meteo requires clear attribution to both the Copernicus programme and Open-Meteo.',
     fields: [
       ...latLongFields(),
     ],
@@ -1284,7 +1407,7 @@ const verifiedKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://api.zippopotam.us', accent: '#2d9cdb', monogram: 'ZIP', risk: 'Review',
     usageNote: 'Useful for form autofill and map context; keep requests focused to avoid unnecessary retries.',
     fields: [
-      { id: 'country', label: 'Country code', type: 'text', defaultValue: 'us', placeholder: 'e.g. us', help: 'Use a supported two-letter ISO country code.' },
+      { id: 'country', label: 'Country code', type: 'text', defaultValue: 'us', placeholder: 'e.g. us', minLength: 2, maxLength: 2, pattern: '[A-Za-z]{2}', patternDescription: 'must contain exactly two letters for an ISO 3166-1 alpha-2 country code.', help: 'Use a supported ISO 3166-1 alpha-2 country code such as US, GB, or MY.' },
       { id: 'postalCode', label: 'Postcode', type: 'text', defaultValue: '10001', placeholder: 'e.g. 10001', help: 'Provide a supported country-specific postcode.' },
     ],
     buildUrl: ({ country = 'us', postalCode = '10001' }) =>
@@ -1372,8 +1495,17 @@ const verifiedKeylessApis: ApiDemo[] = [
     id: 'brasilapi-postcode', name: 'Brazil Postcode Explorer', provider: 'BrasilAPI', category: 'Geo',
     description: 'Resolve a Brazilian CEP into address, neighbourhood, city, state, timezone, provider, and coordinates.',
     documentationUrl: 'https://brasilapi.com.br/docs#tag/CEP-V2', accent: '#16a34a', monogram: 'BP',
-    usageNote: 'User-driven lookups only. BrasilAPI prohibits automated crawling and full-range scans.',
-    fields: [{ id: 'postcode', label: 'Brazilian CEP', type: 'text', defaultValue: '01310930', placeholder: 'e.g. 01310-930', help: 'Enter exactly eight digits, with or without a hyphen.' }],
+    usageNote: 'Use bounded single-CEP lookups only. BrasilAPI asks clients not to crawl or full-scan the CEP range.',
+    fields: [{
+      id: 'postcode',
+      label: 'Brazilian CEP',
+      type: 'text',
+      defaultValue: '01310930',
+      placeholder: 'e.g. 01310-930',
+      pattern: '\\d{5}-?\\d{3}',
+      patternDescription: 'must contain exactly eight digits, optionally formatted as 12345-678.',
+      help: 'Enter exactly eight digits, with or without a hyphen.',
+    }],
     buildUrl: ({ postcode = '01310930' }) => `https://brasilapi.com.br/api/cep/v2/${encode((postcode || '01310930').replace(/\D/g, ''))}`,
   },
   {
@@ -1409,35 +1541,35 @@ const verifiedKeylessApis: ApiDemo[] = [
   },
   {
     id: 'malaysia-core-cpi', name: 'Malaysia Core CPI', provider: 'data.gov.my', category: 'Economy',
-    description: 'Load Malaysia core CPI points for core inflation monitoring and public-price snapshots.',
+    description: 'Track Malaysia’s monthly overall core consumer price index, with index level and reporting month kept explicit.',
     documentationUrl: 'https://data.gov.my/data-catalogue/cpi_core', accent: '#0284c7', monogram: 'MCC', risk: 'Review',
-    usageNote: 'Retain official attribution for Malaysia Public Data when redisplaying records.',
-    fields: [limitField({ label: 'Records', defaultValue: '12', min: 12, max: 120, help: 'Return between 12 and 120 rows.' })],
-    buildUrl: ({ count = '12' }) => {
-      const safeCount = clampInt(count, 12, 120, 12)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'cpi_core', limit: String(safeCount), sort: '-date' }).toString()}`
+    usageNote: 'DOSM defines this as a monthly CPI index with base 2010 = 100, not an inflation percentage. Core CPI excludes volatile-price or government-administered items. The demo filters division=overall and retains CC BY 4.0 attribution.',
+    fields: [limitField({ label: 'Months', defaultValue: '12', min: 6, max: 60, help: 'Return between 6 and 60 monthly overall-index observations.' })],
+    buildUrl: ({ limit = '12' }) => {
+      const safeLimit = clampInt(limit, 6, 60, 12)
+      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'cpi_core', filter: 'overall@division', limit: String(safeLimit), sort: '-date' }).toString()}`
     },
   },
   {
     id: 'malaysia-household-income', name: 'Malaysia Household Income', provider: 'data.gov.my', category: 'Economy',
-    description: 'Track Malaysian household income trends with household, mean, median, and distribution metadata.',
+    description: 'Compare Malaysia mean and median nominal gross monthly household income across published HIES survey observations.',
     documentationUrl: 'https://data.gov.my/data-catalogue/hh_income', accent: '#0369a1', monogram: 'MHI', risk: 'Review',
-    usageNote: 'Retain official attribution for Malaysia Public Data when redisplaying records.',
-    fields: [limitField({ label: 'Records', defaultValue: '10', min: 6, max: 120, help: 'Return between 6 and 120 rows.' })],
-    buildUrl: ({ count = '10' }) => {
-      const safeCount = clampInt(count, 6, 120, 10)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'hh_income', limit: String(safeCount), sort: '-date' }).toString()}`
+    usageNote: 'DOSM publishes nominal RM values that are not inflation-adjusted. HIES observations are survey years, not a complete consecutive annual series.',
+    fields: [limitField({ label: 'Survey observations', defaultValue: '10', min: 6, max: 30, help: 'Return between 6 and 30 published HIES observations.' })],
+    buildUrl: ({ limit = '10' }) => {
+      const safeLimit = clampInt(limit, 6, 30, 10)
+      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'hh_income', limit: String(safeLimit), sort: '-date' }).toString()}`
     },
   },
   {
     id: 'malaysia-population', name: 'Malaysia Population', provider: 'data.gov.my', category: 'Economy',
-    description: 'Retrieve Malaysia population and demographic breakdowns for age, gender, and ethnicity.',
+    description: 'Track Malaysia national total population by year using both sexes, all ages, and all ethnicities.',
     documentationUrl: 'https://data.gov.my/data-catalogue/population_malaysia', accent: '#0ea5e9', monogram: 'MPO', risk: 'Review',
-    usageNote: 'Retain official attribution for Malaysia Public Data when redisplaying records.',
-    fields: [limitField({ label: 'Records', defaultValue: '10', min: 6, max: 120, help: 'Return between 6 and 120 rows.' })],
-    buildUrl: ({ count = '10' }) => {
-      const safeCount = clampInt(count, 6, 120, 10)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'population_malaysia', limit: String(safeCount), sort: '-date' }).toString()}`
+    usageNote: "DOSM publishes population in thousands of people ('000). This demo filters all demographic dimensions to their overall totals so each row is one national yearly observation.",
+    fields: [limitField({ label: 'Years', defaultValue: '10', min: 6, max: 57, help: 'Return between 6 and 57 annual national-total observations.' })],
+    buildUrl: ({ limit = '10' }) => {
+      const safeLimit = clampInt(limit, 6, 57, 10)
+      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'population_malaysia', filter: 'both@sex,overall@age,overall@ethnicity', limit: String(safeLimit), sort: '-date' }).toString()}`
     },
   },
   {
@@ -1448,34 +1580,34 @@ const verifiedKeylessApis: ApiDemo[] = [
       queryField({ label: 'Recall search', defaultValue: 'peanut', placeholder: 'e.g. peanut', help: 'Search food recall text by product or recall reason.' }),
       limitField({ label: 'Records', defaultValue: '8', min: 1, max: 30, help: 'Return between 1 and 30 records.' }),
     ],
-    buildUrl: ({ query = 'peanut', count = '8' }) => {
-      const safeCount = clampInt(count, 1, 30, 8)
+    buildUrl: ({ query = 'peanut', limit = '8' }) => {
+      const safeLimit = clampInt(limit, 1, 30, 8)
       return `https://api.fda.gov/food/enforcement.json?${new URLSearchParams({
         search: query.trim() || 'peanut',
-        limit: String(safeCount),
+        limit: String(safeLimit),
       }).toString()}`
     },
   },
   {
     id: 'iconify-search', name: 'Iconify Search', provider: 'Iconify', category: 'Utility',
-    description: 'Search open-source icon sets and metadata, including icon names and licensing for UI prototyping.',
+    description: 'Search Iconify icon identifiers and preserve the matching icon-set author and licence metadata for UI prototyping.',
     documentationUrl: 'https://iconify.design/docs/api/search.html', accent: '#7c3aed', monogram: 'ICS', usageNote: 'Show icon licensing and attribution context when exporting catalog entries.',
     fields: [
       queryField({ label: 'Icon keyword', defaultValue: 'home', placeholder: 'e.g. home', help: 'Search icon keywords across public sets.' }),
-      limitField({ label: 'Icons', defaultValue: '12', min: 1, max: 60, help: 'Return between 1 and 60 results.' }),
+      limitField({ label: 'Icons', defaultValue: '32', min: 32, max: 60, help: 'Iconify accepts 32 to 999 search results; this demo caps the browser payload at 60.' }),
     ],
-    buildUrl: ({ query = 'home', count = '12' }) => {
-      const safeCount = clampInt(count, 1, 60, 12)
-      return `https://api.iconify.design/search?${new URLSearchParams({ query: query.trim() || 'home', limit: String(safeCount) }).toString()}`
+    buildUrl: ({ query = 'home', limit = '32' }) => {
+      const safeLimit = clampInt(limit, 32, 60, 32)
+      return `https://api.iconify.design/search?${new URLSearchParams({ query: query.trim() || 'home', limit: String(safeLimit) }).toString()}`
     },
   },
   {
     id: 'homebrew-formula-json', name: 'Homebrew Formula JSON', provider: 'Homebrew', category: 'Developer',
-    description: 'Inspect Homebrew formula and cask metadata, including versions, dependencies, and metadata fields.',
+    description: 'Inspect one exact Homebrew formula or cask token, preserving package identity, version, dependencies or app artifacts, licence, and platform metadata.',
     documentationUrl: 'https://formulae.brew.sh/docs/api/', accent: '#ef4444', monogram: 'HBF',
     usageNote: 'Homebrew API is community-maintained; keep request volume low for reliability.',
     fields: [
-      { id: 'formula', label: 'Formula or cask name', type: 'text', defaultValue: 'node', placeholder: 'e.g. node', help: 'Search by formula/cask package name.' },
+      { id: 'formula', label: 'Formula or cask token', type: 'text', defaultValue: 'node', placeholder: 'e.g. node', help: 'Enter the exact Homebrew formula/cask token used in formulae.brew.sh URLs; this endpoint is a direct lookup, not free-text search.' },
       { id: 'collection', label: 'Collection', type: 'select', defaultValue: 'formula', help: 'Select Formula or Cask metadata source.',
         options: [{ label: 'Formula', value: 'formula' }, { label: 'Cask', value: 'cask' }] },
     ],
@@ -1502,13 +1634,13 @@ const verifiedKeylessApis: ApiDemo[] = [
   },
   {
     id: 'geoboundaries-admin-boundaries', name: 'geoBoundaries Admin Boundaries', provider: 'geoBoundaries', category: 'Geo',
-    description: 'Load open administrative boundary downloads and GeoJSON polygons across official ADM levels.',
+    description: 'Inspect gbOpen administrative-boundary layer metadata, provenance, per-unit geometry statistics, and provider download links.',
     documentationUrl: 'https://www.geoboundaries.org/api.html', accent: '#0369a1', monogram: 'GBD',
-    usageNote: 'Use downloaded geometry data for informational map views and attribution surfaces.',
+    usageNote: 'geoBoundaries requires attribution for programmatic/API use. This demo uses gbOpen. The returned boundaryLicense is the original source-data license; geometry is provided through download URLs, and meanAreaSqKM/meanPerimeterLengthKM are averages across administrative units rather than total country measurements.',
     fields: [
-      { id: 'countryIso', label: 'Country ISO', type: 'text', defaultValue: 'SGP', minLength: 3, maxLength: 3, help: 'Use a three-letter country code.' },
-      { id: 'adminLevel', label: 'Admin level', type: 'select', defaultValue: 'ADM0', help: 'Choose the administrative level.',
-        options: [{ label: 'ADM0', value: 'ADM0' }, { label: 'ADM1', value: 'ADM1' }, { label: 'ADM2', value: 'ADM2' }, { label: 'ADM3', value: 'ADM3' }] },
+      { id: 'countryIso', label: 'Country ISO', type: 'text', defaultValue: 'SGP', minLength: 3, maxLength: 3, pattern: '[A-Za-z]{3}', patternDescription: 'must contain exactly three letters (an ISO 3166-1 alpha-3 code or the special ALL code).', help: 'Use an ISO 3166-1 alpha-3 country code such as SGP, GBR, or USA; geoBoundaries also accepts ALL.' },
+      { id: 'adminLevel', label: 'Admin level', type: 'select', defaultValue: 'ADM0', help: 'geoBoundaries accepts ADM0 through ADM5, but available levels vary by country.',
+        options: [{ label: 'ADM0', value: 'ADM0' }, { label: 'ADM1', value: 'ADM1' }, { label: 'ADM2', value: 'ADM2' }, { label: 'ADM3', value: 'ADM3' }, { label: 'ADM4', value: 'ADM4' }, { label: 'ADM5', value: 'ADM5' }] },
     ],
     buildUrl: ({ countryIso = 'SGP', adminLevel = 'ADM0' }) =>
       `https://www.geoboundaries.org/api/current/gbOpen/${encode((countryIso || 'SGP').toUpperCase())}/${encode(adminLevel || 'ADM0')}/`,
@@ -1523,14 +1655,14 @@ const verifiedKeylessApis: ApiDemo[] = [
       { id: 'startLongitude', label: 'Start longitude', type: 'number', defaultValue: '103.8198', min: -180, max: 180, help: 'Source longitude in degrees.' },
       { id: 'endLatitude', label: 'End latitude', type: 'number', defaultValue: '1.290270', min: -90, max: 90, help: 'Destination latitude in degrees.' },
       { id: 'endLongitude', label: 'End longitude', type: 'number', defaultValue: '103.851959', min: -180, max: 180, help: 'Destination longitude in degrees.' },
-      limitField({ label: 'Alternatives', defaultValue: '1', min: 1, max: 3, help: 'Request one to three route alternatives.' }),
+      numberField('alternatives', { label: 'Alternatives', defaultValue: '1', min: 1, max: 3, help: 'Request up to one to three alternative routes; OSRM does not guarantee that every requested alternative exists.' }),
     ],
-    buildUrl: ({ startLatitude = '1.3521', startLongitude = '103.8198', endLatitude = '1.290270', endLongitude = '103.851959', count = '1' }) => {
+    buildUrl: ({ startLatitude = '1.3521', startLongitude = '103.8198', endLatitude = '1.290270', endLongitude = '103.851959', alternatives = '1' }) => {
       const safeStartLatitude = Number.parseFloat(startLatitude)
       const safeStartLongitude = Number.parseFloat(startLongitude)
       const safeEndLatitude = Number.parseFloat(endLatitude)
       const safeEndLongitude = Number.parseFloat(endLongitude)
-      const safeAlternatives = clampInt(count, 1, 3, 1)
+      const safeAlternatives = clampInt(alternatives, 1, 3, 1)
       const route = `${Number.isFinite(safeStartLongitude) ? safeStartLongitude : 103.8198},${Number.isFinite(safeStartLatitude) ? safeStartLatitude : 1.3521};${Number.isFinite(safeEndLongitude) ? safeEndLongitude : 103.851959},${Number.isFinite(safeEndLatitude) ? safeEndLatitude : 1.29027}`
       return `https://router.project-osrm.org/route/v1/driving/${route}?${new URLSearchParams({
         alternatives: String(safeAlternatives),
@@ -1542,10 +1674,11 @@ const verifiedKeylessApis: ApiDemo[] = [
   },
   {
     id: 'opendota-pro-matches', name: 'OpenDota Matches', provider: 'OpenDota', category: 'Games',
-    description: 'Pull professional Dota 2 matches with patch, league, and team metadata for esports dashboarding.',
+    description: 'Pull the provider-defined recent batch of professional Dota 2 matches with league and team metadata for esports inspection.',
     documentationUrl: 'https://docs.opendota.com/', accent: '#16a34a', monogram: 'ODT',
-    fields: [limitField({ label: 'Matches', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 matches.' })],
-    buildUrl: ({ count = '8' }) => `https://api.opendota.com/api/proMatches?${new URLSearchParams({ limit: String(clampInt(count, 1, 20, 8)) }).toString()}`,
+    usageNote: 'OpenDota /proMatches does not expose a result-count limit; it currently returns a provider-sized recent batch and supports less_than_match_id only for older-match pagination. The Request Lab therefore does not claim a non-existent limit control.',
+    fields: [],
+    buildUrl: () => 'https://api.opendota.com/api/proMatches',
   },
   {
     id: 'openligadb-matches', name: 'OpenLigaDB', provider: 'OpenLigaDB', category: 'Sports',
@@ -1564,18 +1697,18 @@ const verifiedKeylessApis: ApiDemo[] = [
   },
   {
     id: 'uk-parliament-members', name: 'UK Parliament Members', provider: 'UK Parliament', category: 'Government',
-    description: 'Search active MPs and Lords for current constituencies and party-group metadata.',
-    documentationUrl: 'https://developer.parliament.uk/apis/members-overview', accent: '#7c3aed', monogram: 'UKM',
+    description: 'Search current members of the UK House of Commons or House of Lords with party and latest-house membership metadata.',
+    documentationUrl: 'https://members-api.parliament.uk/index.html', accent: '#7c3aed', monogram: 'UKM',
     fields: [
-      queryField({ label: 'Member name', defaultValue: 'Rishi', placeholder: 'e.g. Rishi', help: 'Search member names from official directories.' }),
-      limitField({ label: 'Members', defaultValue: '10', min: 1, max: 50, help: 'Return between 1 and 50 members.' }),
+      queryField({ label: 'Member name', defaultValue: 'Rishi', placeholder: 'e.g. Rishi', help: 'Match current Commons or Lords members whose name contains this text.' }),
+      limitField({ label: 'Members', defaultValue: '10', min: 1, max: 20, help: 'Return between 1 and 20 members. The provider calls this parameter take and caps it at 20.' }),
     ],
-    buildUrl: ({ query = 'Rishi', count = '10' }) => {
-      const safeCount = clampInt(count, 1, 50, 10)
+    buildUrl: ({ query = 'Rishi', limit = '10' }) => {
+      const safeLimit = clampInt(limit, 1, 20, 10)
       return `https://members-api.parliament.uk/api/Members/Search?${new URLSearchParams({
-        name: query.trim() || 'Rishi',
+        Name: query.trim() || 'Rishi',
         skip: '0',
-        limit: String(safeCount),
+        take: String(safeLimit),
       }).toString()}`
     },
   },
@@ -1585,16 +1718,15 @@ const verifiedKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://github.com/toddrob99/MLB-StatsAPI/wiki/Endpoints', accent: '#0891b2', monogram: 'MLBS', risk: 'Review',
     usageNote: 'Unofficial endpoint; MLB content terms apply',
     fields: [
-      { id: 'date', label: 'Schedule date', type: 'text', defaultValue: today, placeholder: 'YYYY-MM-DD', help: 'Use a published game date (YYYY-MM-DD).' },
+      { id: 'date', label: 'Schedule date', type: 'date', defaultValue: today, help: 'Use a published game date in YYYY-MM-DD format.' },
       { id: 'sportId', label: 'Sport ID', type: 'number', defaultValue: '1', min: 1, max: 20, help: 'Use 1 for MLB regular schedule snapshots.' },
     ],
-    buildUrl: ({ date = today, sportId = '1', teamId = '' }) => {
-      const targetDate = (date || today).slice(0, 10)
+    buildUrl: ({ date = today, sportId = '1' }) => {
+      const targetDate = isIsoCalendarDate(date.trim()) ? date.trim() : today
       const params = new URLSearchParams({
         sportId: String(clampInt(sportId, 1, 20, 1)),
         date: targetDate,
       })
-      if (teamId && Number.parseInt(teamId, 10)) params.set('teamId', encode(teamId))
       return `https://statsapi.mlb.com/api/v1/schedule?${params.toString()}`
     },
   },
@@ -1618,7 +1750,7 @@ const verifiedExpansionApis: ApiDemo[] = [
     id: 'color-api', name: 'The Color API', provider: 'TheColorAPI', category: 'Utility',
     description: 'Convert a hex color into RGB, HSL, HSV, CMYK, a named color match, and a contrast recommendation.',
     documentationUrl: 'https://www.thecolorapi.com/docs', accent: '#24b1e0', monogram: 'HEX',
-    fields: [{ id: 'hex', label: 'Hex color', type: 'text', defaultValue: '24B1E0', placeholder: 'e.g. 24B1E0', help: 'Enter a hex color with or without the leading #.' }],
+    fields: [{ id: 'hex', label: 'Hex color', type: 'text', defaultValue: '24B1E0', placeholder: 'e.g. 24B1E0', pattern: '#?(?:[0-9A-Fa-f]{3}|[0-9A-Fa-f]{6})', patternDescription: 'must be a 3- or 6-digit hexadecimal color, with an optional leading #.', help: 'Enter 3 or 6 hexadecimal digits, with or without the leading #.' }],
     buildUrl: ({ hex = '24B1E0' }) => `https://www.thecolorapi.com/id?hex=${encode((hex || '24B1E0').replace(/^#/, ''))}`,
   },
   {
@@ -1690,7 +1822,7 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
     description: 'Look up a CVE\'s Exploit Prediction Scoring System probability and percentile of real-world exploitation.',
     documentationUrl: 'https://www.first.org/epss/api', accent: '#b42318', monogram: 'EPS', risk: 'Review',
     usageNote: 'EPSS is a probability estimate, not a guarantee of exploitation. Use alongside CVSS and CISA KEV status.',
-    fields: [{ id: 'cve', label: 'CVE identifier', type: 'text', defaultValue: 'CVE-2021-44228', placeholder: 'e.g. CVE-2021-44228', help: 'Enter a published CVE identifier (e.g. the Log4Shell CVE).' }],
+    fields: [cveField('CVE identifier')],
     buildUrl: ({ cve = 'CVE-2021-44228' }) => `https://api.first.org/data/v1/epss?${new URLSearchParams({ cve: cve.trim() || 'CVE-2021-44228' }).toString()}`,
   },
   {
@@ -1706,6 +1838,7 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
   {
     id: 'deps-dev', name: 'deps.dev Package Insights', provider: 'Google Open Source Insights', category: 'Developer',
     description: 'Inspect a package\'s published versions, dependencies, licenses, and security advisories across ecosystems.',
+    keywords: ['package vulnerabilities', 'dependency security', 'software supply chain'],
     documentationUrl: 'https://docs.deps.dev/api/v3/', accent: '#4285f4', monogram: 'DD',
     fields: [
       { id: 'system', label: 'Package ecosystem', type: 'select', defaultValue: 'npm', help: 'Choose a package system.', options: [
@@ -1726,7 +1859,7 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
   },
   {
     id: 'un-sdg-goals', name: 'UN Sustainable Development Goals', provider: 'United Nations Statistics Division', category: 'Government',
-    description: 'Browse the official list of United Nations Sustainable Development Goals with descriptions.',
+    description: 'Browse the official United Nations Sustainable Development Goal catalogue with goal codes, titles, descriptions, and API paths.',
     documentationUrl: 'https://unstats.un.org/SDGAPI/swagger/', accent: '#1cabe2', monogram: 'SDG',
     fields: [],
     buildUrl: () => 'https://unstats.un.org/SDGAPI/v1/sdg/Goal/List',
@@ -1752,10 +1885,11 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
     buildUrl: ({ query = 'stanford' }) => `https://api.ror.org/v2/organizations?${new URLSearchParams({ query: query.trim() || 'stanford' }).toString()}`,
   },
   {
-    id: 'celestrak-satellites', name: 'CelesTrak Satellite Tracker', provider: 'CelesTrak', category: 'Geo',
-    description: 'Browse orbital elements for the ISS, Starlink, GPS, and other active satellite groups.',
+    id: 'celestrak-satellites', name: 'CelesTrak Orbital Elements', provider: 'CelesTrak', category: 'Geo',
+    description: 'Inspect a bounded CelesTrak General Perturbations orbital-element set for space stations or operational GPS satellites.',
+    keywords: ['satellite orbit', 'orbital elements', 'space stations', 'GPS satellites'],
     documentationUrl: 'https://celestrak.org/NORAD/documentation/gp-data-formats.php', accent: '#111827', monogram: 'SAT',
-    usageNote: 'CelesTrak GP data refreshes about every two hours. Automated verification must not poll more often than the update cadence and must stop immediately after any non-200 response.',
+    usageNote: 'CelesTrak JSON uses CCSDS OMM keywords for GP elements. Values describe an orbit at the supplied epoch, not a live position. This browser demo intentionally excludes large Active and Starlink groups to reduce provider load and payload size. GP data updates about every two hours; automated verification must not poll more often than the update cadence and must stop immediately after any non-200 response.',
     automatedVerification: {
       mode: 'cadence-limited',
       minimumIntervalSeconds: 7200,
@@ -1763,8 +1897,8 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
       reason: 'CelesTrak asks machine clients to download GP data only once per update and to stop immediately after any non-200 response.',
       policyUrl: 'https://celestrak.org/usage-policy.php',
     },
-    fields: [{ id: 'group', label: 'Satellite group', type: 'select', defaultValue: 'stations', help: 'Choose a tracked satellite group.', options: [
-      { label: 'Space stations', value: 'stations' }, { label: 'Starlink', value: 'starlink' }, { label: 'GPS operational', value: 'gps-ops' }, { label: 'Active satellites', value: 'active' },
+    fields: [{ id: 'group', label: 'Bounded satellite group', type: 'select', defaultValue: 'stations', help: 'Choose a bounded GP group. Large Active and Starlink sets are intentionally excluded from this browser demo.', options: [
+      { label: 'Space stations', value: 'stations' }, { label: 'GPS operational', value: 'gps-ops' },
     ] }],
     buildUrl: ({ group = 'stations' }) => `https://celestrak.org/NORAD/elements/gp.php?${new URLSearchParams({ GROUP: group || 'stations', FORMAT: 'json' }).toString()}`,
   },
@@ -1819,16 +1953,17 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
 const verifiedThirdExpansionApis: ApiDemo[] = [
   {
     id: 'eurostat-population', name: 'Eurostat Population Statistics', provider: 'Eurostat', category: 'Economy',
-    description: 'Read official European Union population figures by country and year from Eurostat.',
+    description: 'Read Eurostat population-on-1-January totals by country and published reference year.',
     documentationUrl: 'https://ec.europa.eu/eurostat/web/user-guides/data-browser/api-data-access/api-getting-started', accent: '#003399', monogram: 'EU',
+    usageNote: 'Uses Eurostat dataset demo_pjan with annual frequency, unit Number, age Total, and sex Total. The dataset currently publishes through reference year 2025.',
     fields: [
       { id: 'country', label: 'Country', type: 'select', defaultValue: 'DE', help: 'Choose an EU member state.', options: [
         { label: 'Germany', value: 'DE' }, { label: 'France', value: 'FR' }, { label: 'Italy', value: 'IT' }, { label: 'Spain', value: 'ES' }, { label: 'Netherlands', value: 'NL' },
       ] },
-      { id: 'year', label: 'Reference year', type: 'number', defaultValue: '2023', min: 2010, max: 2023, help: 'Choose a year between 2010 and 2023.' },
+      { id: 'year', label: 'Reference year', type: 'number', defaultValue: '2025', min: 2010, max: 2025, help: 'Choose a published demo_pjan reference year from 2010 through 2025.' },
     ],
-    buildUrl: ({ country = 'DE', year = '2023' }) => {
-      const safeYear = Math.min(2023, Math.max(2010, Number.parseInt(year, 10) || 2023))
+    buildUrl: ({ country = 'DE', year = '2025' }) => {
+      const safeYear = Math.min(2025, Math.max(2010, Number.parseInt(year, 10) || 2025))
       return `https://ec.europa.eu/eurostat/api/dissemination/statistics/1.0/data/demo_pjan?${new URLSearchParams({ format: 'JSON', geo: country || 'DE', sex: 'T', age: 'TOTAL', time: String(safeYear) }).toString()}`
     },
   },
@@ -1843,9 +1978,10 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'fema-disasters', name: 'FEMA Disaster Declarations', provider: 'FEMA OpenFEMA', category: 'Government',
-    description: 'Browse recent United States federal disaster declarations by state and incident type.',
-    documentationUrl: 'https://www.fema.gov/about/openfema/api', accent: '#1a4480', monogram: 'FEMA',
-    fields: [{ id: 'limit', label: 'Declarations', type: 'number', defaultValue: '5', min: 1, max: 10, help: 'Return between 1 and 10 recent declarations.' }],
+    description: 'Browse recently declared geographic areas within United States federal disaster declarations.',
+    documentationUrl: 'https://www.fema.gov/about/openfema/disaster-declarations-summaries', accent: '#1a4480', monogram: 'FEMA',
+    usageNote: 'DisasterDeclarationsSummaries is area-level: one federal declaration can appear in many rows, one per designated geographic area. OpenFEMA describes the source as raw NEMIS data that may contain a small percentage of human error.',
+    fields: [{ id: 'limit', label: 'Declared-area rows', type: 'number', defaultValue: '5', min: 1, max: 10, help: 'Return between 1 and 10 recent designated-area records; repeated disaster IDs are expected.' }],
     buildUrl: ({ limit = '5' }) => {
       const safeLimit = Math.min(10, Math.max(1, Number.parseInt(limit, 10) || 5))
       return `https://www.fema.gov/api/open/v2/DisasterDeclarationsSummaries?${new URLSearchParams({ '$top': String(safeLimit), '$orderby': 'declarationDate desc' }).toString()}`
@@ -1871,6 +2007,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   {
     id: 'languagetool-grammar-check', name: 'LanguageTool Grammar Check', provider: 'LanguageTool', category: 'Language',
     description: 'Check English text for grammar, spelling, and style issues with rule-based suggestions.',
+    keywords: ['spell check', 'proofreading', 'grammar correction'],
     documentationUrl: 'https://languagetool.org/http-api/', accent: '#39a845', monogram: 'LT',
     usageNote: 'For interactive, human-driven checks only. The free public endpoint prohibits automated requests; use a self-hosted or Enterprise instance for automation. Submitted text is sent to LanguageTool: do not send confidential text.',
     agentExecution: {
@@ -1927,16 +2064,22 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   {
     id: 'uniprot-protein', name: 'UniProt Protein Lookup', provider: 'UniProt', category: 'Research',
     description: 'Look up a protein\'s function, organism, gene, and annotation score by accession number.',
-    documentationUrl: 'https://www.uniprot.org/help/api_queries', accent: '#00639c', monogram: 'UNI',
-    fields: [{ id: 'accession', label: 'UniProt accession', type: 'text', defaultValue: 'P05067', placeholder: 'e.g. P05067', help: 'Enter a UniProtKB accession number.' }],
-    buildUrl: ({ accession = 'P05067' }) => `https://rest.uniprot.org/uniprotkb/${encode(accession || 'P05067')}.json`,
+    documentationUrl: 'https://www.uniprot.org/help/accession_numbers', accent: '#00639c', monogram: 'UNI',
+    fields: [{ id: 'accession', label: 'UniProt accession', type: 'text', defaultValue: 'P05067', placeholder: 'e.g. P05067', pattern: '[OPQ][0-9][A-Z0-9]{3}[0-9]|[A-NR-Z][0-9](?:[A-Z][A-Z0-9]{2}[0-9]){1,2}', patternDescription: 'must be a valid 6- or 10-character UniProtKB accession.', help: 'Use the official 6- or 10-character UniProtKB accession format, such as P05067 or A0A023GPI8.' }],
+    buildUrl: ({ accession = 'P05067' }) => `https://rest.uniprot.org/uniprotkb/${encode(accession.trim() || 'P05067')}.json`,
   },
   {
     id: 'rcsb-pdb-entry', name: 'RCSB Protein Data Bank Entry', provider: 'RCSB PDB', category: 'Research',
-    description: 'Inspect a solved protein structure\'s experimental method, authors, and publication details.',
-    documentationUrl: 'https://data.rcsb.org/index.html', accent: '#4a4a4a', monogram: 'PDB',
-    fields: [{ id: 'entryId', label: 'PDB entry ID', type: 'text', defaultValue: '4HHB', placeholder: 'e.g. 4HHB', help: 'Enter a four-character PDB structure identifier.' }],
-    buildUrl: ({ entryId = '4HHB' }) => `https://data.rcsb.org/rest/v1/core/entry/${encode(entryId || '4HHB').toUpperCase()}`,
+    description: 'Inspect an experimentally determined PDB structure\'s method, archive facts, and primary publication details.',
+    documentationUrl: 'https://www.rcsb.org/docs/programmatic-access/web-apis-overview', accent: '#4a4a4a', monogram: 'PDB',
+    usageNote: 'RCSB and wwPDB are transitioning to 12-character extended PDB IDs. This direct core-entry demo accepts a current four-character PDB ID or its official transitional pdb_0000XXXX alias; because the live Data API does not currently resolve that alias directly, the browser normalizes the one-to-one transitional form back to its four-character ID at the provider boundary. Extended-only IDs issued after the July 21, 2027 archive transition are not yet claimed as supported and this contract must be re-evaluated before that cutover.',
+    fields: [{ id: 'entryId', label: 'PDB entry ID', type: 'text', defaultValue: '4HHB', placeholder: 'e.g. 4HHB or pdb_00004hhb', minLength: 4, maxLength: 12, pattern: '(?:[A-Za-z0-9]{4}|[Pp][Dd][Bb]_0000[A-Za-z0-9]{4})', patternDescription: 'must be a four-character PDB ID or a transitional pdb_0000XXXX extended alias for an entry that still has a legacy ID.', help: 'Enter 4HHB or its transitional extended alias pdb_00004hhb. Extended-only IDs issued after the 2027 transition are not yet supported by this direct core-entry demo.' }],
+    buildUrl: ({ entryId = '4HHB' }) => {
+      const normalized = (entryId.trim() || '4HHB').toUpperCase()
+      const transitionalAlias = normalized.match(/^PDB_0000([A-Z0-9]{4})$/)
+      const providerEntryId = transitionalAlias?.[1] ?? normalized
+      return `https://data.rcsb.org/rest/v1/core/entry/${encode(providerEntryId)}`
+    },
   },
   {
     id: 'ensembl-gene-lookup', name: 'Ensembl Gene Lookup', provider: 'Ensembl', category: 'Research',
@@ -1947,8 +2090,9 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'obis-marine-occurrences', name: 'OBIS Marine Occurrences', provider: 'Ocean Biodiversity Information System', category: 'Biodiversity',
-    description: 'Search real recorded occurrences of marine species by scientific name across global datasets.',
+    description: 'Inspect OBIS marine occurrence records by scientific name with occurrence status, record basis, event date, coordinates, dataset provenance, and provider QC flags.',
     documentationUrl: 'https://api.obis.org/', accent: '#0b6e99', monogram: 'OBIS',
+    usageNote: 'OBIS aggregates Darwin Core occurrence records from many datasets with varying licences and data quality. Keep occurrence status, source dataset, identifiers, coordinates and provider QC flags visible rather than treating every returned row as equivalent evidence.',
     fields: [
       { id: 'scientificName', label: 'Species (scientific name)', type: 'text', defaultValue: 'Delphinus delphis', placeholder: 'e.g. Delphinus delphis', help: 'Enter a marine species scientific name.' },
       { id: 'size', label: 'Occurrences', type: 'number', defaultValue: '5', min: 1, max: 10, help: 'Return between 1 and 10 occurrence records.' },
@@ -1960,25 +2104,42 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'worms-species-lookup', name: 'WoRMS Marine Species Registry', provider: 'World Register of Marine Species', category: 'Biodiversity',
-    description: 'Look up the accepted taxonomy, rank, and authority for a marine species name.',
+    description: 'Resolve a marine scientific name in WoRMS while preserving whether the queried name is accepted and, when it is not, the current accepted name and AphiaID.',
     documentationUrl: 'https://www.marinespecies.org/rest/', accent: '#0e7c86', monogram: 'WMS',
+    usageNote: 'WoRMS AphiaRecords preserve the queried name and its taxonomic status. valid_AphiaID identifies the current final accepted name; do not hide synonym or unaccepted-name relationships.',
     fields: [{ id: 'name', label: 'Species (scientific name)', type: 'text', defaultValue: 'Delphinus delphis', placeholder: 'e.g. Delphinus delphis', help: 'Enter a marine species scientific name.' }],
     buildUrl: ({ name = 'Delphinus delphis' }) => `https://www.marinespecies.org/rest/AphiaRecordsByName/${encode(name || 'Delphinus delphis')}?${new URLSearchParams({ like: 'false' }).toString()}`,
   },
   {
     id: 'paleobiodb-taxa', name: 'Paleobiology Database Taxa', provider: 'Paleobiology Database', category: 'Nature',
-    description: 'Look up a fossil taxon\'s rank, extinction status, and number of recorded occurrences.',
+    description: 'Inspect a Paleobiology Database taxon with rank, accepted-name identity, extancy, and the provider’s fossil-occurrence count.',
     documentationUrl: 'https://paleobiodb.org/data1.2/', accent: '#7a5230', monogram: 'PBDB',
+    usageNote: 'PBDB defines n_occs as fossil occurrences identified as the named taxon or any of its subtaxa. It is not a direct-only count for the exact name.',
     fields: [{ id: 'name', label: 'Taxon name', type: 'text', defaultValue: 'Tyrannosaurus', placeholder: 'e.g. Tyrannosaurus', help: 'Enter a genus or species name.' }],
     buildUrl: ({ name = 'Tyrannosaurus' }) => `https://paleobiodb.org/data1.2/taxa/list.json?${new URLSearchParams({ name: name.trim() || 'Tyrannosaurus', vocab: 'pbdb' }).toString()}`,
   },
   {
-    id: 'usgs-water-legacy', name: 'USGS Water Data (Legacy)', provider: 'U.S. Geological Survey', category: 'Environment', risk: 'Review',
-    description: 'Read the latest river gauge measurement from a United States water monitoring site.',
-    documentationUrl: 'https://waterservices.usgs.gov/', accent: '#00264c', monogram: 'USGS',
-    usageNote: 'This legacy USGS water service is scheduled for retirement in early 2027; migrate to the newer Water Data APIs when available.',
-    fields: [{ id: 'site', label: 'Monitoring site', type: 'text', defaultValue: '01646500', placeholder: 'e.g. 01646500', help: 'Enter a USGS site number (default is the Potomac River near Washington, D.C.).' }],
-    buildUrl: ({ site = '01646500' }) => `https://waterservices.usgs.gov/nwis/iv/?${new URLSearchParams({ sites: site.trim() || '01646500', format: 'json', siteStatus: 'all' }).toString()}`,
+    id: 'usgs-water-legacy', name: 'USGS Water Data V1', provider: 'U.S. Geological Survey', category: 'Environment',
+    description: 'Read the latest continuous USGS sensor observation for streamflow or gage height at a monitoring location.',
+    documentationUrl: 'https://api.waterdata.usgs.gov/docs/ogcapi/', accent: '#00264c', monogram: 'USGS',
+    usageNote: 'Uses the modern USGS Water Data API V1 latest-continuous collection. API keys are optional and only increase rate limits; observations can be provisional or approved.',
+    fields: [
+      { id: 'site', label: 'Monitoring site', type: 'text', defaultValue: '01646500', placeholder: 'e.g. 01646500', help: 'Enter a USGS monitoring-location number (default is the Potomac River near Washington, D.C.).' },
+      { id: 'parameter', label: 'Measurement', type: 'select', defaultValue: '00060', help: 'Choose the continuous sensor quantity to read.', options: [
+        { label: 'Streamflow / discharge (00060)', value: '00060' },
+        { label: 'Gage height (00065)', value: '00065' },
+      ] },
+    ],
+    buildUrl: ({ site = '01646500', parameter = '00060' }) => {
+      const siteNumber = site.trim().replace(/^USGS-/i, '') || '01646500'
+      const parameterCode = parameter === '00065' ? '00065' : '00060'
+      return `https://api.waterdata.usgs.gov/ogcapi/v1/collections/latest-continuous/items?${new URLSearchParams({
+        f: 'json',
+        monitoring_location_id: `USGS-${siteNumber}`,
+        parameter_code: parameterCode,
+        limit: '1',
+      }).toString()}`
+    },
   },
   {
     id: 'rubygems-lookup', name: 'RubyGems Package Lookup', provider: 'RubyGems.org', category: 'Developer',
@@ -2011,39 +2172,47 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
   },
   {
     id: 'ipwhois-lookup', name: 'IPWhoIs Geolocation', provider: 'ipwho.is', category: 'Developer',
-    description: 'Look up an IP address\'s country, region, city, timezone, and network provider.',
-    documentationUrl: 'https://ipwho.is/documentation', accent: '#0f766e', monogram: 'GEO',
-    usageNote: 'IP-based geolocation is approximate and reflects the network provider, not a precise personal address.',
-    fields: [{ id: 'ip', label: 'IP address', type: 'text', defaultValue: '8.8.8.8', placeholder: 'e.g. 8.8.8.8', help: 'Enter a public IPv4 or IPv6 address.' }],
-    buildUrl: ({ ip = '8.8.8.8' }) => `https://ipwho.is/${encode(ip || '8.8.8.8')}`,
+    description: 'Inspect approximate IP-based location, timezone, ASN, network organization, and ISP metadata for one public IPv4 or IPv6 address.',
+    documentationUrl: 'https://ipwhois.io/documentation', accent: '#0f766e', monogram: 'GEO',
+    usageNote: 'IP geolocation is approximate network-derived data, not device GPS or a precise personal address. The free endpoint allows 1,000 requests/day; browser CORS requests are counted per domain, so the quota is shared across Public-API traffic from this origin.',
+    fields: [{ id: 'ip', label: 'IP address', type: 'text', defaultValue: '8.8.8.8', placeholder: 'e.g. 8.8.8.8', help: 'Enter one public IPv4 or IPv6 address. Reserved or invalid addresses can return HTTP 200 with success=false.' }],
+    buildUrl: ({ ip = '8.8.8.8' }) => `https://ipwho.is/${encode(ip.trim() || '8.8.8.8')}`,
   },
   {
     id: 'newton-math-solver', name: 'Newton Math Solver', provider: 'Newton API', category: 'Knowledge',
-    description: 'Simplify, factor, derive, or solve a mathematical expression for education demos.',
-    documentationUrl: 'https://newton.vercel.app/', accent: '#4c1d95', monogram: 'MATH', risk: 'Review',
-    usageNote: 'A community-maintained service; treat as an education demo rather than a guaranteed-uptime dependency.',
+    description: 'Run a bounded symbolic-math operation and inspect the provider-returned expression and result.',
+    keywords: ['symbolic math', 'solve equation', 'differentiate', 'factor polynomial'],
+    documentationUrl: 'https://github.com/aunyks/newton-api', accent: '#4c1d95', monogram: 'MATH', risk: 'Review',
+    usageNote: 'A community-maintained symbolic math service. The legacy newton.now.sh hostname redirects to the current newton.vercel.app deployment; Public-API calls the Vercel deployment directly to avoid a redirect dependency. Treat this as an education demo rather than a guaranteed-uptime dependency.',
     fields: [
       { id: 'operation', label: 'Operation', type: 'select', defaultValue: 'simplify', help: 'Choose a math operation.', options: [
         { label: 'Simplify', value: 'simplify' }, { label: 'Factor', value: 'factor' }, { label: 'Derive', value: 'derive' }, { label: 'Zeroes', value: 'zeroes' },
       ] },
-      { id: 'expression', label: 'Expression', type: 'text', defaultValue: '2x+2x', placeholder: 'e.g. 2x+2x', help: 'Use ^ for powers and avoid spaces.' },
+      { id: 'expression', label: 'Expression', type: 'text', defaultValue: '2x+2x', placeholder: 'e.g. 2x+2x', minLength: 1, help: 'Use ^ for powers and avoid spaces.' },
     ],
-    buildUrl: ({ operation = 'simplify', expression = '2x+2x' }) => `https://newton.now.sh/api/v2/${encode(operation || 'simplify')}/${encode(expression || '2x+2x')}`,
+    buildUrl: ({ operation = 'simplify', expression = '2x+2x' }) => `https://newton.vercel.app/api/v2/${encode(operation || 'simplify')}/${encode(expression || '2x+2x')}`,
   },
   {
-    id: 'datamuse-rhymes', name: 'Datamuse Word Finder', provider: 'Datamuse', category: 'Language',
-    description: 'Find rhymes, related words, and spelling suggestions using the Datamuse word-relations engine.',
+    id: 'datamuse-rhymes', name: 'Datamuse Sounds-Like Finder', provider: 'Datamuse', category: 'Language',
+    description: "Find English words and phrases pronounced similarly to a supplied term using Datamuse's documented sounds-like constraint.",
+    keywords: ['pronunciation', 'phonetic similarity', 'sounds like'],
     documentationUrl: 'https://www.datamuse.com/api/', accent: '#be185d', monogram: 'DTM',
-    fields: [{ id: 'word', label: 'Word to rhyme with', type: 'text', defaultValue: 'orange', placeholder: 'e.g. orange', help: 'Enter a word to find rhyming matches.' }],
-    buildUrl: ({ word = 'orange' }) => `https://api.datamuse.com/words?${new URLSearchParams({ rel_rhy: word.trim() || 'orange' }).toString()}`,
+    usageNote: 'The stable catalog ID is retained for deep-link compatibility, but the live request now uses the documented sl=sounds-like contract rather than the older undocumented rel_rhy parameter. Datamuse says result score values are useful only for ordering, asks public apps to acknowledge Datamuse, and allows keyless use up to 100,000 requests/day only through 2026-12-31; starting 2027-01-01 every request will require an API key, so this browser-native demo must be re-evaluated before then.',
+    fields: [{ id: 'word', label: 'Sounds like', type: 'text', defaultValue: 'orange', placeholder: 'e.g. orange', minLength: 1, maxLength: 80, help: 'Enter an English word or phrase. Datamuse will rank vocabulary entries with similar pronunciation.' }],
+    buildUrl: ({ word = 'orange' }) => `https://api.datamuse.com/words?${new URLSearchParams({ sl: word.trim() || 'orange', max: '8', md: 'psr', ipa: '1' }).toString()}`,
   },
   {
     id: 'open5e-monster-search', name: 'Open5e Monster Search', provider: 'Open5e', category: 'Games',
-    description: 'Search open-license tabletop RPG monsters with stat blocks, hit points, and armor class.',
+    description: 'Search the current Open5e V2 creature catalogue for open-license tabletop RPG monsters with source-aware combat statistics.',
     documentationUrl: 'https://open5e.com/api-docs', accent: '#166534', monogram: 'O5E',
-    usageNote: 'The live demo caps search results at 8 records to reduce browser payload while preserving free-form monster search.',
-    fields: [{ id: 'search', label: 'Monster search', type: 'text', defaultValue: 'dragon', placeholder: 'e.g. dragon', help: 'Search open-license monster names.' }],
-    buildUrl: ({ search = 'dragon' }) => `https://api.open5e.com/v1/monsters/?${new URLSearchParams({ search: search.trim() || 'dragon', limit: '8' }).toString()}`,
+    usageNote: 'Uses the current Open5e V2 creatures endpoint with case-insensitive name matching. The live demo caps results at 8 and requests only the source, identity, combat, movement, and perception fields used by the semantic card; familiar monster names can appear more than once when different source documents or game systems provide distinct versions.',
+    fields: [{ id: 'search', label: 'Monster name contains', type: 'text', defaultValue: 'dragon', placeholder: 'e.g. dragon', help: 'Case-insensitive partial-name search across Open5e V2 creatures.' }],
+    buildUrl: ({ search = 'dragon' }) => `https://api.open5e.com/v2/creatures/?${new URLSearchParams({
+      name__icontains: search.trim() || 'dragon',
+      limit: '8',
+      fields: 'name,key,document,type,size,challenge_rating,armor_class,hit_points,hit_dice,speed,alignment,passive_perception',
+      document__fields: 'name,key,gamesystem',
+    }).toString()}`,
   },
   {
     id: 'dicebear-avatar', name: 'DiceBear Avatar Generator', provider: 'DiceBear', category: 'Utility',
@@ -2121,19 +2290,21 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     name: 'UK Food Hygiene Ratings',
     provider: 'Food Standards Agency',
     category: 'Food',
-    description: 'Search establishments by name and retrieve hygiene, structural, and management scores plus service classification.',
+    description: 'Search food establishments by name and inspect provider ratings, inspection dates, local-authority identity, and FHRS component scores.',
     documentationUrl: 'https://api.ratings.food.gov.uk/help',
     accent: '#0b5f66',
     monogram: 'FKH',
+    usageNote: 'For FHRS, the overall rating runs 0–5 with higher better, while Hygiene/Structural/Confidence intervention scores run in the opposite direction with lower better. Component scores apply to FHRS, not FHIS, and may be absent after a rescore.',
     fields: [
-      { id: 'name', label: 'Establishment name', type: 'text', defaultValue: 'Cafe', placeholder: 'e.g. Cafe', help: 'Search UK food businesses by name fragment.' },
-      { id: 'count', label: 'Results', type: 'number', defaultValue: '5', min: 1, max: 50, help: 'Return between 1 and 50 establishments.' },
+      { id: 'name', label: 'Establishment name', type: 'text', defaultValue: 'Cafe', placeholder: 'e.g. Cafe', help: 'Search UK food businesses by name.' },
+      { id: 'count', label: 'Results', type: 'number', defaultValue: '5', min: 1, max: 50, help: 'Return between 1 and 50 establishments from the first result page.' },
     ],
     headers: { 'x-api-version': '2' },
     buildUrl: ({ name = 'Cafe', count = '5' }) => {
       const safeCount = Math.min(50, Math.max(1, Number.parseInt(count, 10) || 5))
       return `https://api.ratings.food.gov.uk/Establishments?${new URLSearchParams({
         name: name.trim() || 'Cafe',
+        pageNumber: '1',
         pageSize: String(safeCount),
       }).toString()}`
     },
@@ -2143,44 +2314,45 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     name: 'UK Flood Monitoring',
     provider: 'DEFRA',
     category: 'Environment',
-    description: 'Query active flood stations and reading points, including alerts, flow, and water-level metadata.',
+    description: 'Find Environment Agency monitoring stations for an exact river name, including location, status, catchment, and available measurement types.',
+    keywords: ['flood stations', 'river monitoring', 'Environment Agency stations'],
     documentationUrl: 'https://environment.data.gov.uk/flood-monitoring/doc/reference',
     accent: '#065f46',
     monogram: 'FLD',
+    usageNote: 'The provider documents riverName as an exact-match filter. This endpoint returns station and available-measure metadata, not current readings or flood warnings.',
     fields: [
-      { id: 'riverName', label: 'River name', type: 'text', defaultValue: 'Thames', placeholder: 'e.g. Thames', help: 'Filter monitoring stations by river name.' },
-      { id: 'count', label: 'Stations', type: 'number', defaultValue: '8', min: 1, max: 50, help: 'Return between 1 and 50 station records.' },
+      { id: 'riverName', label: 'Exact river name', type: 'text', defaultValue: 'River Severn', placeholder: 'e.g. River Severn', help: 'Use the Environment Agency river name exactly; the provider does not treat this field as a contains search.' },
+      { id: 'count', label: 'Stations', type: 'number', defaultValue: '8', min: 1, max: 50, help: 'Return between 1 and 50 matching station records.' },
     ],
-    buildUrl: ({ riverName = 'Thames', count = '8' }) => {
+    buildUrl: ({ riverName = 'River Severn', count = '8' }) => {
       const safeCount = Math.min(50, Math.max(1, Number.parseInt(count, 10) || 8))
       return `https://environment.data.gov.uk/flood-monitoring/id/stations?${new URLSearchParams({
-        riverName: riverName.trim() || 'Thames',
+        riverName: riverName.trim() || 'River Severn',
         _limit: String(safeCount),
       }).toString()}`
     },
   },
   {
     id: 'unhcr-refugees', name: 'UNHCR Refugee Statistics', provider: 'UNHCR', category: 'Data',
-    description: 'Explore refugee and displacement statistics by origin country and reporting year.',
+    description: 'Read UNHCR end-of-year displacement population figures for one ISO3 country of origin and reporting year.',
     documentationUrl: 'https://www.unhcr.org/refugee-statistics/insights/explainers/forcibly-displaced-api.html', accent: '#7c2d12', monogram: 'UNH',
+    usageNote: 'The request sets cf_type=ISO so the origin input is interpreted as ISO3. Country of asylum is omitted, so UNHCR aggregates that dimension into one year-end row.',
     fields: [
-      { id: 'origin', label: 'Origin country ISO', type: 'text', defaultValue: 'SYR', placeholder: 'e.g. SYR', help: 'Use a three-letter country-of-origin code such as SYR.' },
-      { id: 'year', label: 'Year', type: 'number', defaultValue: '2024', min: 2010, max: 2025, help: 'Choose a published annual snapshot year.' },
-      { id: 'count', label: 'Results', type: 'number', defaultValue: '5', min: 1, max: 20, help: 'Return between 1 and 20 records.' },
+      { id: 'origin', label: 'Origin country ISO3', type: 'text', defaultValue: 'SYR', placeholder: 'e.g. SYR', minLength: 3, maxLength: 3, pattern: '[A-Za-z]{3}', patternDescription: 'must contain exactly three letters for an ISO 3166-1 alpha-3 country code.', help: 'Use exactly three ISO 3166-1 alpha-3 letters such as SYR; cf_type=ISO makes UNHCR interpret this field as ISO3.' },
+      { id: 'year', label: 'Year', type: 'number', defaultValue: '2025', min: 2010, max: 2025, help: 'Choose a published annual end-of-year snapshot from 2010 through 2025.' },
     ],
-    buildUrl: ({ origin = 'SYR', year = '2024', count = '5' }) => {
-      const safeYear = Math.min(2025, Math.max(2010, Number.parseInt(year, 10) || 2024))
-      const safeCount = Math.min(20, Math.max(1, Number.parseInt(count, 10) || 5))
-      return `https://api.unhcr.org/population/v1/population/?${new URLSearchParams({ yearFrom: String(safeYear), yearTo: String(safeYear), coo: (origin.trim() || 'SYR').toUpperCase(), limit: String(safeCount) }).toString()}`
+    buildUrl: ({ origin = 'SYR', year = '2025' }) => {
+      const safeYear = Math.min(2025, Math.max(2010, Number.parseInt(year, 10) || 2025))
+      return `https://api.unhcr.org/population/v1/population/?${new URLSearchParams({ yearFrom: String(safeYear), yearTo: String(safeYear), coo: (origin.trim() || 'SYR').toUpperCase(), cf_type: 'ISO', limit: '1' }).toString()}`
     },
   },
   {
     id: 'hdx-humanitarian-datasets', name: 'IFRC GO Emergency Events', provider: 'IFRC GO', category: 'Data',
-    description: 'Review recent humanitarian emergencies with disaster type, country, severity, and reported impact figures.',
-    documentationUrl: 'https://go.ifrc.org/', accent: '#d9232e', monogram: 'IFR', risk: 'Review',
-    usageNote: 'IFRC GO event data supports situational awareness. Verify impact figures and source reports before operational decisions.',
+    description: 'Review recent IFRC GO emergency events ordered by disaster start date, with source-specific field-report impacts when available.',
+    documentationUrl: 'https://goadmin.ifrc.org/api-docs/swagger-ui/', accent: '#d9232e', monogram: 'IFR', risk: 'Review',
+    usageNote: 'IFRC GO exposes event-level and field-report impact figures from different sources. Keep IFRC, government, and other-source figures separate and verify source reports before operational decisions.',
     fields: [],
-    buildUrl: () => 'https://goadmin.ifrc.org/api/v2/event/?limit=6&ordering=-created_at',
+    buildUrl: () => 'https://goadmin.ifrc.org/api/v2/event/?limit=6&ordering=-disaster_start_date',
   },
   {
     id: 'open-meteo-climate',
@@ -2194,16 +2366,21 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
     fields: [
       ...latLongFields(),
       { id: 'startYear', label: 'Start year', type: 'number', defaultValue: '2020', min: 1950, max: 2050, help: 'Choose a projection window start year.' },
-      { id: 'endYear', label: 'End year', type: 'number', defaultValue: '2026', min: 1950, max: 2050, help: 'Choose a projection window end year.' },
-      { id: 'model', label: 'Model', type: 'select', defaultValue: 'ecmwf_ifs04', help: 'Select a climate model source.',
+      { id: 'endYear', label: 'End year', type: 'number', defaultValue: '2026', min: 1950, max: 2050, minimumFromField: 'startYear', help: 'Choose a projection window end year greater than or equal to the start year.' },
+      { id: 'model', label: 'Model', type: 'select', defaultValue: 'CMCC_CM2_VHR4', help: 'Select one of the seven climate models currently documented by Open-Meteo.',
         options: [
-          { label: 'ECMWF IFS 04', value: 'ecmwf_ifs04' },
-          { label: 'NASA NEX-GDDP', value: 'nasa_nex_gddp' },
+          { label: 'CMCC CM2 VHR4', value: 'CMCC_CM2_VHR4' },
+          { label: 'FGOALS f3 H', value: 'FGOALS_f3_H' },
+          { label: 'HiRAM SIT HR', value: 'HiRAM_SIT_HR' },
+          { label: 'MRI AGCM3 2 S', value: 'MRI_AGCM3_2_S' },
+          { label: 'EC-Earth3P HR', value: 'EC_Earth3P_HR' },
+          { label: 'MPI ESM1 2 XR', value: 'MPI_ESM1_2_XR' },
+          { label: 'NICAM16 8S', value: 'NICAM16_8S' },
         ] },
     ],
-    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startYear = '2020', endYear = '2026', model = 'ecmwf_ifs04' }) => {
+    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startYear = '2020', endYear = '2026', model = 'CMCC_CM2_VHR4' }) => {
       const safeStartYear = Math.min(2050, Math.max(1950, Number.parseInt(startYear, 10) || 2020))
-      const safeEndYear = Math.max(safeStartYear, Math.min(2050, Number.parseInt(endYear, 10) || 2026))
+      const safeEndYear = Math.min(2050, Math.max(1950, Number.parseInt(endYear, 10) || 2026))
       return `https://climate-api.open-meteo.com/v1/climate?${new URLSearchParams({
         latitude: latitude || '1.3521',
         longitude: longitude || '103.8198',
@@ -2214,7 +2391,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
         format: 'json',
       }).toString()}`
     },
-    usageNote: 'Use climate projections for decision support contexts only; retain model details when presenting outcomes.',
+    usageNote: 'Open-Meteo climate projections use downscaled HighResMIP / CMIP6 climate models. Treat them as modelled projections rather than observations, and retain the selected model and date range when presenting outcomes.',
   },
   {
     id: 'models-dev', name: 'Hugging Face Model Search', provider: 'Hugging Face', category: 'Developer',
@@ -2224,7 +2401,7 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
       { id: 'query', label: 'Model search', type: 'text', defaultValue: 'gpt', placeholder: 'e.g. gpt', help: 'Search public model IDs and names.' },
       { id: 'count', label: 'Results', type: 'number', defaultValue: '8', min: 1, max: 25, help: 'Return between 1 and 25 models.' },
     ],
-    buildUrl: ({ query = 'gpt', count = '8' }) => `https://huggingface.co/api/models?${new URLSearchParams({ search: query.trim() || 'gpt', limit: String(Math.min(25, Math.max(1, Number.parseInt(count, 10) || 8))), full: 'false' }).toString()}`,
+    buildUrl: ({ query = 'gpt', count = '8' }) => `https://huggingface.co/api/models?${new URLSearchParams({ search: query.trim() || 'gpt', limit: String(Math.min(25, Math.max(1, Number.parseInt(count, 10) || 8))), full: 'true' }).toString()}`,
   },
   {
     id: 'vatcomply',
@@ -2357,8 +2534,9 @@ const verifiedFourthExpansionApis: ApiDemo[] = [
   },
   {
     id: 'opencitations-index', name: 'OpenCitations Citation Count', provider: 'OpenCitations', category: 'Research',
-    description: 'Look up the number of incoming citations for a DOI in the OpenCitations Index.',
+    description: 'Look up the number of incoming citations recorded in OpenCitations Index v2 for a DOI.',
     documentationUrl: 'https://opencitations.net/index/api/v2', accent: '#0f766e', monogram: 'OCI',
+    usageNote: 'OpenCitations citation-count is index-scoped, not a universal citation total. Anonymous REST API calls are rate-limited to 180 requests/minute per IP; OpenCitations recommends data dumps for large-scale retrieval.',
     fields: [{ id: 'doi', label: 'DOI', type: 'text', defaultValue: '10.1109/5.771073', placeholder: 'e.g. 10.1109/5.771073', help: 'Use a valid DOI string.' }],
     buildUrl: ({ doi = '10.1109/5.771073' }) => `https://api.opencitations.net/index/v2/citation-count/doi:${encodeURIComponent(doi.trim() || '10.1109/5.771073')}`,
   },
@@ -2475,6 +2653,7 @@ ORDER BY ?publ ?authorName`
   {
     id: 'nominatim-search', name: 'OpenStreetMap Nominatim', provider: 'OpenStreetMap', category: 'Geo',
     description: 'Geocode places and addresses into OpenStreetMap coordinates and structured address metadata.',
+    keywords: ['geocoding', 'geocoder', 'address lookup', 'address to coordinates', 'place search'],
     documentationUrl: 'https://nominatim.org/release-docs/latest/api/Search/', accent: '#7ebc6f', monogram: 'NOM',
     usageNote: 'The public Nominatim service requires OpenStreetMap attribution, identifiable browser requests, and no more than one request per second. Do not use it for autocomplete or bulk geocoding. Its LLM/platform policy requires deliberate developer adoption rather than generic platform integration.',
     agentExecution: {
@@ -2541,19 +2720,18 @@ ORDER BY ?publ ?authorName`
         { label: 'Life expectancy', value: 'SP.DYN.LE00.IN' }, { label: 'GDP · current US$', value: 'NY.GDP.MKTP.CD' }, { label: 'GDP per capita · current US$', value: 'NY.GDP.PCAP.CD' }, { label: 'Population', value: 'SP.POP.TOTL' }, { label: 'Inflation · consumer prices %', value: 'FP.CPI.TOTL.ZG' }, { label: 'Unemployment · %', value: 'SL.UEM.TOTL.ZS' }, { label: 'Internet users · %', value: 'IT.NET.USER.ZS' },
       ] },
       { id: 'startYear', label: 'Start year', type: 'number', defaultValue: '2015', min: 1960, max: 2100, help: 'Beginning of the requested time series.' },
-      { id: 'endYear', label: 'End year', type: 'number', defaultValue: '2025', min: 1960, max: 2100, help: 'End of the requested time series.' },
+      { id: 'endYear', label: 'End year', type: 'number', defaultValue: '2025', min: 1960, max: 2100, minimumFromField: 'startYear', help: 'End of the requested time series; choose a year greater than or equal to the start year.' },
     ],
     buildUrl: ({ country = 'SGP', indicator = 'SP.DYN.LE00.IN', startYear = '2015', endYear = '2025' }) => {
       const safeStart = clampInt(startYear, 1960, 2100, 2015)
       const safeEnd = clampInt(endYear, 1960, 2100, 2025)
-      const from = Math.min(safeStart, safeEnd)
-      const to = Math.max(safeStart, safeEnd)
-      return `https://api.worldbank.org/v2/country/${encode(country || 'SGP').toUpperCase()}/indicator/${encode(indicator || 'SP.DYN.LE00.IN')}?${new URLSearchParams({ format: 'json', date: `${from}:${to}`, per_page: '100' }).toString()}`
+      return `https://api.worldbank.org/v2/country/${encode(country || 'SGP').toUpperCase()}/indicator/${encode(indicator || 'SP.DYN.LE00.IN')}?${new URLSearchParams({ format: 'json', date: `${safeStart}:${safeEnd}`, per_page: '100' }).toString()}`
     },
   },
   {
     id: 'exchange-rate-current', name: 'Current FX Rates', provider: 'ExchangeRate-API', category: 'Finance',
     description: 'Read a current keyless exchange-rate table for a selected base currency.',
+    keywords: ['currency conversion', 'convert currency', 'foreign exchange', 'FX conversion'],
     documentationUrl: 'https://www.exchangerate-api.com/docs/free', accent: '#0f766e', monogram: 'ERX',
     usageNote: 'The open endpoint is intended for lightweight current-rate use. Review the provider terms before building financial or commercial decision systems around the feed.',
     fields: [{ id: 'base', label: 'Base currency', type: 'select', defaultValue: 'SGD', help: 'Choose the currency whose current cross-rates should be displayed.', options: [
@@ -2566,8 +2744,8 @@ ORDER BY ?publ ?authorName`
     description: 'Fetch a normalized CVE 5 record from CIRCL Vulnerability-Lookup with CNA descriptions and affected products.',
     documentationUrl: 'https://vulnerability.circl.lu/api/', accent: '#7c3aed', monogram: 'CIR', risk: 'Review',
     usageNote: 'Use vulnerability records as investigation evidence, not as an automatic patching decision. Confirm affected versions and remediation guidance from the vendor or package ecosystem.',
-    fields: [{ id: 'cve', label: 'CVE ID', type: 'text', defaultValue: 'CVE-2021-44228', placeholder: 'e.g. CVE-2021-44228', help: 'Enter a published CVE identifier.' }],
-    buildUrl: ({ cve = 'CVE-2021-44228' }) => `https://vulnerability.circl.lu/api/cve/${encode(cve.trim().toUpperCase() || 'CVE-2021-44228')}`,
+    fields: [cveField('CVE ID')],
+    buildUrl: ({ cve = 'CVE-2021-44228' }) => `https://vulnerability.circl.lu/api/vulnerability/${encode(cve.trim().toUpperCase() || 'CVE-2021-44228')}`,
   },
 ]
 
@@ -2601,6 +2779,11 @@ export const validateParameters = (
   parameters: Record<string, string>,
 ): Record<string, string> => {
   const errors: Record<string, string> = {}
+  const declaredFieldIds = new Set(api.fields.map((field) => field.id))
+
+  for (const key of Object.keys(parameters)) {
+    if (!declaredFieldIds.has(key)) errors[key] = `Unknown parameter: ${key}.`
+  }
 
   for (const field of api.fields) {
     const value = parameters[field.id]?.trim() ?? ''
@@ -2623,11 +2806,33 @@ export const validateParameters = (
         errors[field.id] = `${field.label} must be at least ${field.minLength} characters.`
       } else if (field.maxLength !== undefined && value.length > field.maxLength) {
         errors[field.id] = `${field.label} must be at most ${field.maxLength} characters.`
+      } else if (field.pattern && !new RegExp(`^(?:${field.pattern})$`).test(value)) {
+        errors[field.id] = `${field.label} ${field.patternDescription ?? 'has an invalid format.'}`
       }
     } else if (field.type === 'date' && !isIsoCalendarDate(value)) {
       errors[field.id] = `${field.label} must be a valid date in YYYY-MM-DD format.`
     } else if (field.options?.length && !field.options.some((option) => option.value === value)) {
       errors[field.id] = `${field.label} must be one of the supported options.`
+    }
+  }
+
+  for (const field of api.fields) {
+    if (!field.minimumFromField || errors[field.id] || errors[field.minimumFromField]) continue
+    const minimumField = api.fields.find((candidate) => candidate.id === field.minimumFromField)
+    if (!minimumField || minimumField.type !== field.type) continue
+
+    const value = parameters[field.id]?.trim() ?? ''
+    const minimumValue = parameters[minimumField.id]?.trim() ?? ''
+    if (!value || !minimumValue) continue
+
+    if (field.type === 'date' && isIsoCalendarDate(value) && isIsoCalendarDate(minimumValue) && value < minimumValue) {
+      errors[field.id] = `${field.label} must be on or after ${minimumField.label}.`
+    } else if (field.type === 'number') {
+      const numericValue = Number(value)
+      const numericMinimum = Number(minimumValue)
+      if (Number.isFinite(numericValue) && Number.isFinite(numericMinimum) && numericValue < numericMinimum) {
+        errors[field.id] = `${field.label} must be greater than or equal to ${minimumField.label}.`
+      }
     }
   }
 

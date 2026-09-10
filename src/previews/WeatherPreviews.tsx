@@ -1,6 +1,9 @@
+import './stationList.css'
+import './weatherCards.css'
 import type { CSSProperties } from 'react'
 import type { ApiDemo } from '../apiCatalog'
 import { cleanText, dateParts, findByKey, findPreviewRecords, forecastSymbol, formatNumber, isRecord, numberValue, previewLabel, previewValue, recordValue, textValue, timeLabel } from './previewData'
+import { CardEmpty } from './cardPrimitives'
 
 export type WeatherPreviewVariant = 'current' | 'four-day' | 'twenty-four-hour' | 'area-forecast' | 'station-readings' | 'regional-air-quality' | 'air-quality-forecast' | 'uv-index'
 
@@ -51,27 +54,57 @@ const measurementMeta = (api: ApiDemo) => {
 
 export function CurrentConditionsPreview({ data, api }: { data: unknown; api: ApiDemo }) {
   const root = isRecord(data) ? data : {}
-  const current = isRecord(root.current) ? root.current : findPreviewRecords(data)[0] ?? {}
+  const hasCurrentObject = isRecord(root.current)
+  const current = hasCurrentObject ? root.current as Record<string, unknown> : {}
   const units = isRecord(root.current_units) ? root.current_units : {}
-  const temperature = numberValue(current.temperature_2m ?? findByKey(data, ['temperature_2m', 'temperature', 'value']))
-  const humidity = numberValue(current.relative_humidity_2m ?? findByKey(data, ['relative_humidity_2m', 'humidity']))
-  const wind = numberValue(current.wind_speed_10m ?? findByKey(data, ['wind_speed_10m', 'wind_speed']))
-  const code = numberValue(current.weather_code ?? findByKey(data, ['weather_code']))
+  const temperature = numberValue(current.temperature_2m)
+  const humidity = numberValue(current.relative_humidity_2m)
+  const wind = numberValue(current.wind_speed_10m)
+  const code = numberValue(current.weather_code)
+  const time = textValue(current.time)
+  const presentMeasurements = [temperature, humidity, wind, code].filter((value) => value !== undefined).length
+
+  if (!hasCurrentObject || presentMeasurements === 0) {
+    return <CardEmpty
+      domain="current-weather"
+      title="Current weather response unavailable"
+      detail="Open-Meteo did not return the requested current-condition measurements. No live weather conclusion can be drawn from this response."
+      state="invalid"
+    />
+  }
+
+  const resultState = presentMeasurements === 4 && time ? 'ready' : 'partial'
+  const missingMeasurements = [
+    temperature === undefined ? 'temperature' : undefined,
+    humidity === undefined ? 'humidity' : undefined,
+    wind === undefined ? 'wind speed' : undefined,
+    code === undefined ? 'weather code' : undefined,
+    !time ? 'observation time' : undefined,
+  ].filter((value): value is string => Boolean(value))
   const condition = weatherCondition(code)
-  const timezone = textValue(root.timezone) ?? textValue(findByKey(data, ['area', 'location'])) ?? 'Live station'
+  const timezone = textValue(root.timezone) ?? 'Location unavailable'
   const location = timezone.split('/').at(-1)?.replace(/_/g, ' ') ?? timezone
-  const time = textValue(current.time ?? findByKey(data, ['timestamp', 'date']))
   const temperatureUnit = textValue(units.temperature_2m) ?? '°C'
   const measurement = measurementMeta(api)
   const primaryUnit = measurement.unit ?? temperatureUnit
   const metrics = [
-    { label: 'Humidity', value: humidity === undefined ? 'Live reading' : `${formatNumber(humidity)}%`, icon: '◉' },
-    { label: 'Wind speed', value: wind === undefined ? 'Live reading' : `${formatNumber(wind)} ${textValue(units.wind_speed_10m) ?? 'km/h'}`, icon: '≈' },
-    { label: 'Coordinates', value: root.latitude !== undefined && root.longitude !== undefined ? `${formatNumber(Number(root.latitude), 3)}, ${formatNumber(Number(root.longitude), 3)}` : 'Station supplied', icon: '⌖' },
+    { label: 'Humidity', value: humidity === undefined ? '—' : `${formatNumber(humidity)}%`, icon: '◉' },
+    { label: 'Wind speed', value: wind === undefined ? '—' : `${formatNumber(wind)} ${textValue(units.wind_speed_10m) ?? 'km/h'}`, icon: '≈' },
+    { label: 'Coordinates', value: numberValue(root.latitude) !== undefined && numberValue(root.longitude) !== undefined ? `${formatNumber(numberValue(root.latitude) as number, 3)}, ${formatNumber(numberValue(root.longitude) as number, 3)}` : 'Not supplied', icon: '⌖' },
   ]
-  return <div className="weather-preview">
+  return <div
+    className="weather-preview"
+    data-domain-card="current-weather"
+    data-result-state={resultState}
+    data-observation-time={time}
+    data-temperature-2m={temperature}
+    data-relative-humidity-2m={humidity}
+    data-wind-speed-10m={wind}
+    data-weather-code={code}
+  >
+    {resultState === 'partial' && <p className="diagnostic-warning" role="status">Provider response is incomplete. Missing: {missingMeasurements.join(', ')}.</p>}
     <div className="weather-hero">
-      <div><span className="weather-location">⌖ {location}</span><strong>{temperature === undefined ? 'Live' : `${formatNumber(temperature)}${primaryUnit}`}</strong><b>{code === undefined ? measurement.label : condition.label}</b><small>{time ? `Updated ${time.replace('T', ' ')}` : 'Current observation'}</small></div>
+      <div><span className="weather-location">⌖ {location}</span><strong>{temperature === undefined ? '—' : `${formatNumber(temperature)}${primaryUnit}`}</strong><b>{code === undefined ? measurement.label : condition.label}</b><small>{time ? `Updated ${time.replace('T', ' ')}` : 'Observation time unavailable'}</small></div>
       <span className="weather-symbol" aria-hidden="true">{condition.icon}</span>
     </div>
     <div className="weather-metrics">{metrics.map((metric) => <article key={metric.label}><span aria-hidden="true">{metric.icon}</span><div><small>{metric.label}</small><strong>{metric.value}</strong></div></article>)}</div>

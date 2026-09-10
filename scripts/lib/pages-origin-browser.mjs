@@ -11,7 +11,7 @@ export const evidence=process.env.EVIDENCE_DIR||fs.mkdtempSync(path.join(os.tmpd
 fs.mkdirSync(evidence,{recursive:true});
 export const ids=['color-api','google-dns-doh','npm-download-counts','endoflife-date','exchange-rate-current','ecb-fx-rates'];
 export const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-export async function browser(dist, { fixtures = new Map() } = {}){
+export async function browser(dist, { fixtures = new Map(), appAssetFailures = [] } = {}){
  const indexPath=path.join(dist,'index.html');
  if(!fs.existsSync(indexPath))throw Error('Build the Pages-base bundle before browser verification with `npm run build:pages`.');
  const indexHtml=fs.readFileSync(indexPath,'utf8');
@@ -25,6 +25,7 @@ export async function browser(dist, { fixtures = new Map() } = {}){
  if(!pages?.length){chrome.kill();throw Error('CDP unavailable');}
  const ws=new WebSocket(pages.find(p=>p.type==='page').webSocketDebuggerUrl);
  await new Promise((r,j)=>{ws.onopen=r;ws.onerror=j;}); let seq=0;const pending=new Map();const errors=[];const fixtureRequests=[];const blockedProviders=[];const networkFailures=[];const requestUrls=new Map();let requests=0;
+ const appAssetFailureRules=appAssetFailures.map((rule)=>({includes:String(rule.includes||''),remaining:Math.max(0,Number(rule.remaining??1)),errorReason:rule.errorReason||'Failed'}));const appAssetFailureRequests=[];
  const call=(method,params={})=>new Promise((resolve,reject)=>{const id=++seq;pending.set(id,{resolve,reject});ws.send(JSON.stringify({id,method,params}));});
  ws.onmessage=e=>{const m=JSON.parse(e.data);if(m.id){const p=pending.get(m.id);if(p){pending.delete(m.id);m.error?p.reject(Error(JSON.stringify(m.error))):p.resolve(m.result);}return;}
  if(m.method==='Runtime.exceptionThrown')errors.push(m.params.exceptionDetails.text);
@@ -42,6 +43,8 @@ export async function browser(dist, { fixtures = new Map() } = {}){
    if(fixture.stall)return;
    call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:method==='OPTIONS'?204:fixture.status||200,responseHeaders:[{name:'Content-Type',value:'application/json'},{name:'Access-Control-Allow-Origin',value:'*'},{name:'Access-Control-Allow-Methods',value:'GET, POST, OPTIONS'},{name:'Access-Control-Allow-Headers',value:'Content-Type'},{name:'Cache-Control',value:'no-store'}],body:method==='OPTIONS'?'':Buffer.from(JSON.stringify(fixture.body)).toString('base64')}).catch(e=>errors.push(String(e)));return;
   }
+  const failureRule=appAssetFailureRules.find((rule)=>rule.remaining>0&&rule.includes&&url.pathname.includes(rule.includes));
+  if(failureRule){failureRule.remaining-=1;appAssetFailureRequests.push({path:url.pathname,errorReason:failureRule.errorReason});call('Fetch.failRequest',{requestId:m.params.requestId,errorReason:failureRule.errorReason}).catch(e=>errors.push(String(e)));return;}
   const relative=url.pathname.slice('/Public-API/'.length)||'index.html';const f=path.resolve(dist,relative);
   if(!f.startsWith(path.resolve(dist)+path.sep)||!fs.existsSync(f)){errors.push('Missing local test asset: '+relative);call('Fetch.fulfillRequest',{requestId:m.params.requestId,responseCode:404,body:''}).catch(()=>{});return;}
   const type=f.endsWith('.js')?'application/javascript':f.endsWith('.css')?'text/css':f.endsWith('.json')?'application/json':f.endsWith('.html')?'text/html':'application/octet-stream';
@@ -58,5 +61,5 @@ export async function browser(dist, { fixtures = new Map() } = {}){
  const nav=async id=>{await viewport(1440,1000);await call('Page.navigate',{url:`https://yapweijun1996.github.io/Public-API/#/request-lab?api=${id}`});await wait(`document.querySelector('.request-lab')?.dataset.apiId===${JSON.stringify(id)} && !!document.querySelector('form.parameter-card')`);};
  const run=async()=>{await ev(`document.querySelector('.parameter-card').requestSubmit()`);await wait(`['success','error'].includes(document.querySelector('.request-lab')?.dataset.requestState)`,24000);const state=await ev(`document.querySelector('.request-lab').dataset.requestState`);if(state==='error')return {ok:false,error:await ev(`document.querySelector('.response-error').innerText`)};await wait(`document.querySelector('.demo-preview')`);return {ok:true,data:await ev(`JSON.parse(document.querySelector('.response-body pre').textContent)`)};};
  const screenshot=async(file)=>{await ev(`document.querySelector('.demo-preview')?.scrollIntoView({block:'start',behavior:'instant'})`);await sleep(120);const r=await call('Page.captureScreenshot',{format:'png'});fs.writeFileSync(file,Buffer.from(r.data,'base64'));};
- return {call,ev,wait,nav,run,viewport,screenshot,errors,fixtureRequests,blockedProviders,networkFailures,get requestCount(){return requests;},async close(){ws.close();if(chrome.exitCode===null){const exited=new Promise(resolve=>chrome.once('exit',resolve));chrome.kill('SIGTERM');await Promise.race([exited,sleep(3000)]);}if(chrome.exitCode!==null){await sleep(100);fs.rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});}}};
+ return {call,ev,wait,nav,run,viewport,screenshot,errors,fixtureRequests,blockedProviders,networkFailures,appAssetFailureRequests,get requestCount(){return requests;},async close(){ws.close();if(chrome.exitCode===null){const exited=new Promise(resolve=>chrome.once('exit',resolve));chrome.kill('SIGTERM');await Promise.race([exited,sleep(3000)]);}if(chrome.exitCode!==null){await sleep(100);fs.rmSync(profile,{recursive:true,force:true,maxRetries:5,retryDelay:100});}}};
 }

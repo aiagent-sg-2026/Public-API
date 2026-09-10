@@ -1,0 +1,14 @@
+/* Shared station list primitive; loaded only by previews that render station rows. */
+.station-list { padding: 14px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.station-list article { min-width: 0; padding: 10px; display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid #dce7f1; border-radius: 9px; background: #fff; }
+.station-list article > span { width: 34px; height: 30px; display: grid; place-items: center; border-radius: 7px; color: #16798c; background: #e6f7f7; font: 700 8px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.station-list article div { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.station-list article div strong, .station-list article div small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.station-list article div strong { color: #2c405a; }
+.station-list article div small { color: #8692a4; }
+.station-list article > b { color: #183b4e; }
+
+
+@media (max-width: 760px) {
+  .station-list { grid-template-columns: 1fr; }
+}
