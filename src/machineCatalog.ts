@@ -5,8 +5,11 @@ export const MACHINE_CATALOG_SCHEMA_VERSION = 1 as const
 export type MachineCatalogParameter = Pick<ApiField, 'id' | 'label' | 'type' | 'defaultValue' | 'help'> & {
   min?: number
   max?: number
+  minimumFromField?: string
   minLength?: number
   maxLength?: number
+  pattern?: string
+  patternDescription?: string
   options?: Array<{ label: string; value: string }>
 }
 
@@ -16,6 +19,7 @@ export type MachineCatalogApi = {
   provider: string
   category: string
   description: string
+  keywords?: string[]
   documentationUrl: string
   method: 'GET' | 'POST'
   keyRequired: false
@@ -41,7 +45,7 @@ const normalizeBase = (base: string): string => {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`
 }
 
-const exportParameter = ({ id, label, type, defaultValue, help, min, max, minLength, maxLength, options }: ApiField): MachineCatalogParameter => ({
+const exportParameter = ({ id, label, type, defaultValue, help, min, max, minimumFromField, minLength, maxLength, pattern, patternDescription, options }: ApiField): MachineCatalogParameter => ({
   id,
   label,
   type,
@@ -49,8 +53,11 @@ const exportParameter = ({ id, label, type, defaultValue, help, min, max, minLen
   help,
   ...(min === undefined ? {} : { min }),
   ...(max === undefined ? {} : { max }),
+  ...(minimumFromField === undefined ? {} : { minimumFromField }),
   ...(minLength === undefined ? {} : { minLength }),
   ...(maxLength === undefined ? {} : { maxLength }),
+  ...(pattern === undefined ? {} : { pattern }),
+  ...(patternDescription === undefined ? {} : { patternDescription }),
   ...(options?.length ? { options: options.map(({ label: optionLabel, value }) => ({ label: optionLabel, value })) } : {}),
 })
 
@@ -69,6 +76,7 @@ export const buildMachineCatalog = (apis: ApiDemo[], base = '/'): MachineCatalog
       provider: api.provider,
       category: api.category,
       description: api.description,
+      ...(api.keywords?.length ? { keywords: [...api.keywords] } : {}),
       documentationUrl: api.documentationUrl,
       method: api.method ?? 'GET',
       keyRequired: false,

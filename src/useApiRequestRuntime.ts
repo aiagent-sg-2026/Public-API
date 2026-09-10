@@ -8,7 +8,7 @@ export const REQUEST_TIMEOUT_MS = 20_000
 export type RequestState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; data: unknown; httpStatus: number; elapsed: number; size: number; url: string }
+  | { status: 'success'; data: unknown; httpStatus: number; elapsed: number; size: number; url: string; runId: number }
   | { status: 'error'; message: string; url: string; errorType: RequestErrorKind; httpStatus?: number }
 
 type RequestRuntimeOptions = {
@@ -97,7 +97,7 @@ export function useApiRequestRuntime({ onRunStart, preloadResponsePreview }: Req
     void preloadResponsePreview?.()
     try {
       const result = await fetchApi(api, values, controller.signal)
-      if (runId === requestRunIdRef.current) setRequest({ status: 'success', ...result })
+      if (runId === requestRunIdRef.current) setRequest({ status: 'success', ...result, runId })
       return result.data
     } catch (error) {
       if (runId === requestRunIdRef.current) {

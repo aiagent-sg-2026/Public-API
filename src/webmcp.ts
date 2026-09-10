@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { apiCategories, apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, type ApiDemo } from './apiCatalog'
+import { apiCategories, apiCatalog, getAgentExecutionPolicy, getApiById, getAutomatedVerificationPolicy, getDefaultParameters, matchesApiSearch, type ApiDemo } from './apiCatalog'
 import { buildRequestLabUrl } from './routes'
 
 type ToolInput = Record<string, unknown>
@@ -60,7 +60,7 @@ const TOOL_SPECS = [
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Optional text to match against API name, provider, description, or category.' },
+        query: { type: 'string', description: 'Optional task or text to match against API keywords, name, provider, description, category, or ID.' },
         category: { type: 'string', enum: ['All', ...apiCategories], description: 'Optional API category filter.' },
       },
     },
@@ -76,7 +76,7 @@ const TOOL_SPECS = [
       properties: {
         query: {
           type: 'string',
-          description: 'Text to match against API name, provider, description, or category.',
+          description: 'Task or text to match against API keywords, name, provider, description, category, or ID.',
         },
         category: {
           type: 'string',
@@ -138,7 +138,7 @@ const TOOL_SPECS = [
         },
         parameters: {
           type: 'object',
-          description: 'Optional parameter values. Use list_public_api_demos to discover fields.',
+          description: 'Optional declared parameter values. Use list_public_api_demos to discover fields; unknown keys fail validation before provider execution.',
           additionalProperties: { type: ['string', 'number'] },
         },
       },
@@ -173,23 +173,23 @@ export function useWebMcp({
       list_public_api_demos: ({ query, category }) => {
         const safeQuery = typeof query === 'string' ? query.trim() : ''
         const safeCategory = typeof category === 'string' && ['All', ...apiCategories].includes(category) ? category : 'All'
-        const needle = safeQuery.toLowerCase()
         const demos = apiCatalog
           .filter((api) => (safeCategory === 'All' || api.category === safeCategory)
-            && (!needle || `${api.name} ${api.provider} ${api.category} ${api.description}`.toLowerCase().includes(needle)))
+            && matchesApiSearch(api, safeQuery))
           .map((api) => ({
             id: api.id,
             name: api.name,
             provider: api.provider,
             category: api.category,
             description: api.description,
+            ...(api.keywords?.length ? { keywords: api.keywords } : {}),
             documentationUrl: api.documentationUrl,
             method: api.method ?? 'GET',
             requestLabUrl: buildRequestLabUrl(api.id),
             agentExecution: getAgentExecutionPolicy(api),
             automatedVerification: getAutomatedVerificationPolicy(api),
             ...(api.usageNote ? { usageNote: api.usageNote } : {}),
-            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, minLength, maxLength, options }) => ({
+            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, minimumFromField, minLength, maxLength, pattern, patternDescription, options }) => ({
               id,
               label,
               type,
@@ -197,8 +197,11 @@ export function useWebMcp({
               help,
               ...(min === undefined ? {} : { min }),
               ...(max === undefined ? {} : { max }),
+              ...(minimumFromField === undefined ? {} : { minimumFromField }),
               ...(minLength === undefined ? {} : { minLength }),
               ...(maxLength === undefined ? {} : { maxLength }),
+              ...(pattern === undefined ? {} : { pattern }),
+              ...(patternDescription === undefined ? {} : { patternDescription }),
               ...(options?.length ? { options: options.map(({ label: optionLabel, value }) => ({ label: optionLabel, value })) } : {}),
             })),
           }))

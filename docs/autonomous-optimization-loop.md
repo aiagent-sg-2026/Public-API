@@ -98,6 +98,7 @@ Every meaningful UI change should be reviewed for both user classes.
 - stable DOM metadata where useful;
 - no dependency on screenshot interpretation or full-text highlighting;
 - semantic text for information that is also visualized.
+- locale changes preserve API IDs/routes/tool contracts and update programmatic page language; localization must not fork provider/API metadata into a second SSOT, and mixed-language source content should carry the correct local `lang`.
 - the generated machine catalog remains discoverable from ordinary HTML and aligned with catalog/WebMCP execution policy; no separate hand-maintained machine registry or fabricated live-health metadata.
 
 ## Testing policy

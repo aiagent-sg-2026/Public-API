@@ -1,3 +1,4 @@
+import './semanticCards.css'
 export type SemanticCard = {
   title: string
   eyebrow: string

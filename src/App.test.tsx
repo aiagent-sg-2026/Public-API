@@ -3,6 +3,7 @@ import '@testing-library/jest-dom/vitest'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { apiCatalog } from './apiCatalog'
+import { UI_LOCALE_STORAGE_KEY } from './i18n'
 import { apiPreviewComponentIds, apiPreviewComponents, apiSsotCardIds, apiSsotCardRegistry, buildDemoPreview, ResponseDemoPreview, selectPreviewLayout, selectWeatherPreviewVariant } from './responsePreview'
 
 const matchMedia = (query: string): MediaQueryList => ({
@@ -21,9 +22,52 @@ const matchMediaAt = (width: number) => (query: string): MediaQueryList => {
   return { ...matchMedia(query), matches: maxWidth ? width <= Number(maxWidth[1]) : false }
 }
 
+const responsiveMatchMedia = (initialWidth: number) => {
+  let width = initialWidth
+  const queries = new Map<string, MediaQueryList>()
+  const matches = (query: string) => {
+    const maxWidth = query.match(/max-width:\s*(\d+)px/)
+    return maxWidth ? width <= Number(maxWidth[1]) : false
+  }
+  const matchMediaForWidth = (query: string): MediaQueryList => {
+    const existing = queries.get(query)
+    if (existing) return existing
+    const queryListeners = new Set<(event: MediaQueryListEvent) => void>()
+    const mediaQuery = {
+      get matches() { return matches(query) },
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn((_type: string, listener: EventListenerOrEventListenerObject) => {
+        if (typeof listener === 'function') queryListeners.add(listener as (event: MediaQueryListEvent) => void)
+      }),
+      removeEventListener: vi.fn((_type: string, listener: EventListenerOrEventListenerObject) => {
+        if (typeof listener === 'function') queryListeners.delete(listener as (event: MediaQueryListEvent) => void)
+      }),
+      dispatchEvent: vi.fn((event: Event) => {
+        queryListeners.forEach((listener) => listener(event as MediaQueryListEvent))
+        return true
+      }),
+    } as MediaQueryList
+    queries.set(query, mediaQuery)
+    return mediaQuery
+  }
+  const setWidth = (nextWidth: number) => {
+    const previousMatches = new Map([...queries].map(([query, mediaQuery]) => [query, mediaQuery.matches]))
+    width = nextWidth
+    for (const [query, mediaQuery] of queries) {
+      if (mediaQuery.matches === previousMatches.get(query)) continue
+      mediaQuery.dispatchEvent({ matches: mediaQuery.matches, media: query } as MediaQueryListEvent)
+    }
+  }
+  return { matchMedia: matchMediaForWidth, setWidth }
+}
+
 describe('catalog live API flow', () => {
   beforeEach(() => {
     window.location.hash = '#/catalog'
+    window.localStorage.removeItem(UI_LOCALE_STORAGE_KEY)
     vi.stubGlobal('matchMedia', matchMedia)
     vi.stubGlobal('scrollTo', vi.fn())
   })
@@ -70,7 +114,7 @@ describe('catalog live API flow', () => {
 
     expect(screen.getByRole('heading', { name: 'Request lab' })).toBeInTheDocument()
     expect(screen.getByRole('form', { name: 'Configure Open5e Monster Search' })).toHaveAttribute('data-api-id', 'open5e-monster-search')
-    expect(screen.getByRole('textbox', { name: 'Monster search' })).toHaveValue('dragon')
+    expect(screen.getByRole('textbox', { name: 'Monster name contains' })).toHaveValue('dragon')
     expect(window.location.hash).toBe('#/request-lab?api=open5e-monster-search')
   })
 
@@ -80,6 +124,72 @@ describe('catalog live API flow', () => {
 
     await waitFor(() => expect(window.location.hash).toBe('#/request-lab?api=countries'))
     expect(screen.getByRole('form', { name: 'Configure Country Explorer' })).toHaveAttribute('data-api-id', 'countries')
+  })
+
+
+  it('switches the primary application chrome between English and Simplified Chinese without changing API IDs or routes', () => {
+    render(<App />)
+
+    const language = screen.getByRole('combobox', { name: 'Interface language' })
+    expect(document.documentElement).toHaveAttribute('lang', 'en')
+    expect(language).toHaveValue('en')
+
+    fireEvent.change(language, { target: { value: 'zh-CN' } })
+
+    expect(document.documentElement).toHaveAttribute('lang', 'zh-CN')
+    expect(window.localStorage.getItem(UI_LOCALE_STORAGE_KEY)).toBe('zh-CN')
+    expect(screen.getByRole('heading', { name: 'API 目录', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: '搜索目录' })).toBeInTheDocument()
+    expect(screen.getByRole('navigation', { name: '主导航' })).toBeInTheDocument()
+    expect(screen.getByRole('radio', { name: '选择 Country Explorer' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/catalog')
+    const countryRow = document.querySelector('tr[data-api-id="countries"]')
+    expect(countryRow).toBeInTheDocument()
+    expect(countryRow?.querySelector('td:nth-child(2)')).toHaveAttribute('data-label', 'API')
+    expect(countryRow?.querySelector('td:nth-child(3)')).toHaveAttribute('data-label', '提供方 / 来源')
+    expect(countryRow?.querySelector('td:nth-child(4)')).toHaveAttribute('data-label', '风险')
+    expect(countryRow?.querySelector('td:nth-child(5)')).toHaveAttribute('data-label', '标签')
+
+    fireEvent.change(language, { target: { value: 'en' } })
+    expect(document.documentElement).toHaveAttribute('lang', 'en')
+    expect(screen.getByRole('heading', { name: 'API Catalog', level: 1 })).toBeInTheDocument()
+  })
+
+  it('localizes supporting workspace chrome while preserving source-English provider and API identity', () => {
+    render(<App />)
+    fireEvent.click(screen.getByRole('button', { name: 'Collections' }))
+    expect(window.location.hash).toBe('#/collections')
+    expect(screen.getByRole('heading', { name: 'Curated workspaces', level: 2 })).toBeInTheDocument()
+
+    const language = screen.getByRole('combobox', { name: 'Interface language' })
+    fireEvent.change(language, { target: { value: 'zh-CN' } })
+    expect(screen.getByRole('heading', { name: '集合', level: 1 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '精选工作区', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '免密入门合集', level: 3 })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开 API 目录' })).toBeInTheDocument()
+    expect(window.location.hash).toBe('#/collections')
+
+    fireEvent.click(screen.getByRole('button', { name: '提供方' }))
+    expect(window.location.hash).toBe('#/providers')
+    expect(screen.getByRole('heading', { name: '来源目录', level: 2 })).toBeInTheDocument()
+    const providerHeading = screen.getAllByRole('heading', { name: 'World Bank', level: 3 })[0]
+    expect(providerHeading).toHaveAttribute('lang', 'en')
+    const providerCard = providerHeading.closest('article')
+    expect(providerCard?.querySelector('p')).toHaveAttribute('lang', 'en')
+    expect(providerCard?.querySelector('p')).toHaveTextContent('Country Explorer')
+
+    fireEvent.click(screen.getByRole('button', { name: '健康状态' }))
+    expect(window.location.hash).toBe('#/health')
+    expect(screen.getByRole('heading', { name: '目录就绪状态', level: 2 })).toBeInTheDocument()
+    expect(screen.getByText(/这里只显示静态目录元数据/)).toBeInTheDocument()
+    const healthApiHeading = screen.getByRole('heading', { name: 'Country Explorer', level: 3 })
+    expect(healthApiHeading).toHaveAttribute('lang', 'en')
+    expect(healthApiHeading.closest('article')?.querySelector('p')).toHaveAttribute('lang', 'en')
+
+    fireEvent.click(screen.getByRole('button', { name: '阅读开发者指南' }))
+    expect(window.location.hash).toBe('#/documentation')
+    expect(screen.getByRole('heading', { name: '开发者指南', level: 2 })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '1. 添加模块', level: 3 })).toBeInTheDocument()
   })
 
   it('does not fabricate live verification metadata and exposes stable catalog row metadata', () => {
@@ -146,11 +256,50 @@ describe('catalog live API flow', () => {
     expect(labels.size).toBe(195)
     expect(document.querySelector('tr[data-api-id="nominatim-search"]')).toHaveAttribute('data-agent-execution', 'manual-only')
 
-    fireEvent.change(screen.getByRole('textbox', { name: 'Search catalog' }), { target: { value: 'LanguageTool' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search catalog' }), { target: { value: 'geocode address' } })
     expect(screen.getByLabelText('Page 1 of 1')).toBeInTheDocument()
+    expect(document.querySelectorAll('tbody tr[data-api-id]')).toHaveLength(1)
+    expect(document.querySelector('tr[data-api-id="nominatim-search"]')).toHaveAttribute('data-agent-execution', 'manual-only')
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search catalog' }), { target: { value: 'spell check' } })
     expect(document.querySelectorAll('tbody tr[data-api-id]')).toHaveLength(1)
     expect(document.querySelector('tr[data-api-id="languagetool-grammar-check"]')).toHaveAttribute('data-agent-execution', 'manual-only')
   }, 15_000)
+
+  it('preserves focus on catalog filter and pagination controls while their actions replace visible rows', async () => {
+    render(<App />)
+
+    const next = screen.getByRole('button', { name: 'Next catalog page' })
+    next.focus()
+    fireEvent.click(next)
+    expect(screen.getByLabelText('Page 2 of 4')).toBeInTheDocument()
+    expect(next).toHaveFocus()
+
+    const search = screen.getByRole('textbox', { name: 'Search catalog' })
+    search.focus()
+    fireEvent.change(search, { target: { value: 'geocode address' } })
+    expect(screen.getByLabelText('Page 1 of 1')).toBeInTheDocument()
+    expect(search).toHaveFocus()
+    expect(document.querySelector('tr[data-api-id="nominatim-search"]')).toBeInTheDocument()
+  })
+
+  it('moves focus to the destination page heading for browser history route changes', async () => {
+    render(<App />)
+    const search = screen.getByRole('textbox', { name: 'Search catalog' })
+    search.focus()
+
+    act(() => {
+      window.location.hash = '#/documentation'
+      window.dispatchEvent(new HashChangeEvent('hashchange'))
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'Documentation', level: 1 })).toHaveFocus())
+
+    act(() => {
+      window.location.hash = '#/catalog'
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { name: 'API Catalog', level: 1 })).toHaveFocus())
+  })
 
   it('treats the compact selected-API drawer as a modal dialog and restores its invoker', async () => {
     vi.stubGlobal('matchMedia', matchMediaAt(390))
@@ -184,6 +333,82 @@ describe('catalog live API flow', () => {
     expect(document.querySelector('.admin-main')).not.toHaveAttribute('inert')
   })
 
+  it('keeps focus in the selected API context when the compact detail drawer becomes a desktop panel', async () => {
+    const viewport = responsiveMatchMedia(900)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    render(<App />)
+
+    const weatherRadio = screen.getByRole('radio', { name: 'Select Live Weather' })
+    weatherRadio.focus()
+    fireEvent.click(weatherRadio)
+
+    const dialog = await screen.findByRole('dialog', { name: 'Live Weather details' })
+    const close = within(dialog).getByRole('button', { name: 'Close selected API details' })
+    await waitFor(() => expect(close).toHaveFocus())
+
+    act(() => viewport.setWidth(1440))
+
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Close selected API details' })).not.toBeInTheDocument())
+    await waitFor(() => expect(within(document.querySelector('.detail-panel') as HTMLElement).getByRole('heading', { name: 'Live Weather' })).toHaveFocus())
+    expect(document.querySelector('.detail-panel')).not.toHaveAttribute('inert')
+  })
+
+  it('restores the mobile menu trigger when activating the already-current route closes mobile navigation', async () => {
+    vi.stubGlobal('matchMedia', matchMediaAt(390))
+    render(<App />)
+
+    const menu = screen.getByRole('button', { name: 'Open navigation' })
+    fireEvent.click(menu)
+    const navigation = await screen.findByRole('dialog', { name: 'Primary navigation' })
+    const close = within(navigation).getByRole('button', { name: 'Close navigation menu' })
+    await waitFor(() => expect(close).toHaveFocus())
+
+    fireEvent.click(within(navigation).getByRole('button', { name: 'API Catalog' }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Primary navigation' })).not.toBeInTheDocument())
+    await waitFor(() => expect(menu).toHaveFocus())
+    expect(document.querySelector('#primary-navigation')).toHaveAttribute('inert')
+  })
+
+  it('hands focus from the mobile-only navigation close control to the active desktop navigation item at the 760px breakpoint', async () => {
+    const viewport = responsiveMatchMedia(390)
+    vi.stubGlobal('matchMedia', viewport.matchMedia)
+    render(<App />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Open navigation' }))
+    const navigation = await screen.findByRole('dialog', { name: 'Primary navigation' })
+    const close = within(navigation).getByRole('button', { name: 'Close navigation menu' })
+    await waitFor(() => expect(close).toHaveFocus())
+
+    act(() => viewport.setWidth(900))
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Primary navigation' })).not.toBeInTheDocument())
+    const activeNavigationItem = screen.getByRole('button', { name: 'API Catalog' })
+    await waitFor(() => expect(activeNavigationItem).toHaveFocus())
+    expect(document.querySelector('#primary-navigation')).not.toHaveAttribute('inert')
+  })
+
+
+  it('reflects ordered-range SSOT constraints in native inputs and blocks reversed ranges before provider execution', async () => {
+    window.location.hash = '#/request-lab?api=open-meteo-history'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    render(<App />)
+
+    const startDate = screen.getByLabelText('Start date')
+    const endDate = screen.getByLabelText('End date')
+    expect(endDate).toHaveAttribute('min', '2025-01-01')
+
+    fireEvent.change(startDate, { target: { value: '2025-01-10' } })
+    expect(endDate).toHaveAttribute('min', '2025-01-10')
+    fireEvent.change(endDate, { target: { value: '2025-01-05' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(endDate).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('End date must be on or after Start date.')).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Historical Weather request output' })).toHaveAttribute('data-request-state', 'idle')
+  })
 
   it('labels the Health workspace as static catalog metadata rather than current provider health', () => {
     window.location.hash = '#/health'
@@ -218,6 +443,13 @@ describe('catalog live API flow', () => {
     expect(screen.getByRole('region', { name: 'Country Explorer request output' })).toHaveAttribute('data-request-state', 'error')
     expect(screen.getByRole('region', { name: 'Country Explorer request output' })).toHaveAttribute('data-error-type', 'rate-limit')
     expect(screen.getByRole('form', { name: 'Configure Country Explorer' })).toHaveAttribute('data-api-id', 'countries')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Interface language' }), { target: { value: 'zh-CN' } })
+    const localizedAlert = await screen.findByRole('alert', { name: '请求失败：rate-limit' })
+    expect(localizedAlert).toHaveTextContent('错误类型：rate-limit; HTTP 429')
+    expect(screen.getByRole('region', { name: 'Country Explorer 请求输出' })).toHaveAttribute('data-error-type', 'rate-limit')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('implements the Request Lab output as a keyboard-operable ARIA tab set', () => {
@@ -356,6 +588,18 @@ describe('WebMCP discovery contract', () => {
     expect(geoResult.demos).toHaveLength(1)
     expect(geoResult.demos[0]?.parameters.find((field) => field.id === 'countryIso')).toMatchObject({ minLength: 3, maxLength: 3 })
     expect(geoResult.demos[0]?.parameters.find((field) => field.id === 'adminLevel')?.options).toContainEqual({ label: 'ADM3', value: 'ADM3' })
+
+    const taskResult = await listTool?.execute({ query: 'package vulnerabilities', category: 'Developer' }) as {
+      demos: Array<{ id: string; keywords?: string[] }>
+    }
+    expect(taskResult.demos.map((demo) => demo.id)).toEqual(['deps-dev'])
+    expect(taskResult.demos[0]?.keywords).toContain('package vulnerabilities')
+
+    const rangeResult = await listTool?.execute({ query: 'Historical Weather', category: 'Weather' }) as {
+      demos: Array<{ parameters: Array<{ id: string; minimumFromField?: string }> }>
+    }
+    expect(rangeResult.demos).toHaveLength(1)
+    expect(rangeResult.demos[0]?.parameters.find((field) => field.id === 'endDate')).toMatchObject({ minimumFromField: 'startDate' })
   })
 
   it('does not auto-run a manual-only provider from the catalog quick action', async () => {
@@ -452,12 +696,25 @@ describe('demo preview mapping', () => {
     expect(selectPreviewLayout({ id: 'mbta-transit-routes', category: 'Utility' })).toBe('transit-board')
     expect(selectPreviewLayout({ id: 'open-trivia', category: 'Games' })).toBe('trivia-game')
     expect(selectPreviewLayout({ id: 'geocoding-search', category: 'Geo' })).toBe('location-map')
-    expect(selectPreviewLayout({ id: 'carbon-intensity-gb', category: 'Environment' })).toBe('data-table')
+    expect(selectPreviewLayout({ id: 'carbon-intensity-gb', category: 'Environment' })).toBe('carbon-intensity')
+    expect(selectPreviewLayout({ id: 'usgs-water-legacy', category: 'Environment' })).toBe('water-gauge')
     expect(selectPreviewLayout({ id: 'nhtsa-vehicle-recalls', category: 'Vehicle' })).toBe('vehicle-recalls')
     expect(selectPreviewLayout({ id: 'github', category: 'Developer' })).toBe('developer-feed')
     expect(selectPreviewLayout({ id: 'nvd-cves', category: 'Developer' })).toBe('security-center')
-    expect(selectPreviewLayout({ id: 'geoboundaries-admin-boundaries', category: 'Geo' })).toBe('data-table')
-    expect(selectPreviewLayout({ id: 'mlb-stats-api', category: 'Sports' })).toBe('data-table')
+    expect(selectPreviewLayout({ id: 'geoboundaries-admin-boundaries', category: 'Geo' })).toBe('boundary-layer')
+    expect(selectPreviewLayout({ id: 'ipwhois-lookup', category: 'Developer' })).toBe('ip-geolocation')
+    expect(selectPreviewLayout({ id: 'fiscal-data-treasury', category: 'Finance' })).toBe('federal-agency-overview')
+    expect(selectPreviewLayout({ id: 'usaspending', category: 'Government' })).toBe('federal-awards')
+    expect(selectPreviewLayout({ id: 'uk-flood-monitoring', category: 'Environment' })).toBe('flood-stations')
+    expect(selectPreviewLayout({ id: 'fema-disasters', category: 'Government' })).toBe('disaster-declared-areas')
+    expect(selectPreviewLayout({ id: 'malaysia-core-cpi', category: 'Economy' })).toBe('core-cpi-index')
+    expect(selectPreviewLayout({ id: 'malaysia-household-income', category: 'Economy' })).toBe('household-income')
+    expect(selectPreviewLayout({ id: 'malaysia-population', category: 'Economy' })).toBe('population-total')
+    expect(selectPreviewLayout({ id: 'hdx-humanitarian-datasets', category: 'Data' })).toBe('humanitarian-events')
+    expect(selectPreviewLayout({ id: 'uk-food-hygiene', category: 'Food' })).toBe('food-hygiene-ratings')
+    expect(selectPreviewLayout({ id: 'eurostat-population', category: 'Economy' })).toBe('population-statistic')
+    expect(selectPreviewLayout({ id: 'unhcr-refugees', category: 'Data' })).toBe('refugee-population')
+    expect(selectPreviewLayout({ id: 'mlb-stats-api', category: 'Sports' })).toBe('baseball-schedule')
     expect(selectPreviewLayout({ id: 'europe-pmc-search', category: 'Research' })).toBe('research-library')
     expect(selectPreviewLayout({ id: 'free-dictionary', category: 'Language' })).toBe('dictionary-entry')
   })
@@ -466,11 +723,11 @@ describe('demo preview mapping', () => {
     const catalogById = Object.fromEntries(apiCatalog.map((api) => [api.id, api]))
     const expected: Record<string, string> = {
       'openssf-scorecard': 'security-scorecard',
-      'opencitations-index': 'data-table',
+      'opencitations-index': 'citation-count',
       'vam-collections': 'media-gallery',
-      'usaspending': 'data-table',
-      'fiscal-data-treasury': 'data-table',
-      'wikidata-sparql': 'data-table',
+      'usaspending': 'federal-awards',
+      'fiscal-data-treasury': 'federal-agency-overview',
+      'wikidata-sparql': 'knowledge-entities',
       'met-museum-object-detail': 'media-gallery',
       'met-museum-search': 'collection-index',
     }
@@ -493,6 +750,8 @@ describe('demo preview mapping', () => {
       'animechan-random-quote': 'quote-card',
       'swapi-people': 'character-dossier',
       'noaa-tides': 'coastal-water-level',
+      'openligadb-matches': 'football-matchday',
+      'mlb-stats-api': 'baseball-schedule',
     }
 
     for (const [id, layout] of Object.entries(expected)) {
@@ -558,29 +817,48 @@ describe('demo preview mapping', () => {
 
     expect(within(preview).getByText('Live response')).toBeInTheDocument()
     expect(within(preview).getByText('Country intelligence profile')).toBeInTheDocument()
-    expect(within(preview).getByText('Provider · World Bank')).toBeInTheDocument()
-    expect(within(preview).getByText('Category · Data')).toBeInTheDocument()
+    expect(within(preview).getByLabelText('API context')).toHaveTextContent('Provider · World Bank')
+    expect(within(preview).getByLabelText('API context')).toHaveTextContent('Category · Data')
     expect(within(preview).getByLabelText('HTTP status 200')).toHaveTextContent('200 OK')
     expect(within(preview).getByLabelText('Response time 128 milliseconds')).toHaveTextContent('128 ms')
     expect(within(preview).getByLabelText('Response size 1.5 KB')).toHaveTextContent('1.5 KB')
     expect(container.querySelector('.demo-preview-note')).not.toBeInTheDocument()
     expect(within(preview).queryByText(/SSOT adapter:/)).not.toBeInTheDocument()
-    expect(within(preview).getByRole('status')).toHaveTextContent('Live result ready for Country Explorer.')
+    expect(within(preview).getByRole('status')).toHaveTextContent('Live response received for Country Explorer.')
     expect(preview).not.toHaveAttribute('aria-live')
     expect(preview).toHaveAttribute('data-ssot-adapter', 'CountriesPreview')
   })
 
+  it('localizes result-shell chrome without translating source-faithful API metadata or claiming semantic readiness', () => {
+    const candidate = apiCatalog.find((api) => api.id === 'countries')
+    if (!candidate) throw new Error('Missing countries fixture')
+    render(<ResponseDemoPreview api={candidate} data={{}} runtime={{ httpStatus: 200, elapsed: 128, size: 1536 }} locale="zh-CN"/>)
+    const preview = screen.getByRole('region', { name: 'Country Explorer' })
+
+    expect(within(preview).getByRole('status')).toHaveTextContent('已收到 Country Explorer 的实时响应。')
+    expect(within(preview).getByText('实时响应')).toBeInTheDocument()
+    expect(within(preview).getByLabelText('API 上下文')).toHaveTextContent('提供方 · World Bank')
+    expect(within(preview).getByLabelText('API 上下文')).toHaveTextContent('类别 · Data')
+    expect(within(preview).getByLabelText('实时请求元数据')).toBeInTheDocument()
+    expect(within(preview).getByLabelText('HTTP 状态 200')).toHaveTextContent('200 OK')
+    expect(within(preview).getByLabelText('响应时间 128 毫秒')).toHaveTextContent('128 ms')
+    expect(within(preview).getByLabelText('响应大小 1.5 KB')).toHaveTextContent('1.5 KB')
+    expect(within(preview).getByRole('heading', { name: 'Country Explorer' })).toHaveAttribute('lang', 'en')
+    expect(within(preview).getByText(candidate.description)).toHaveAttribute('lang', 'en')
+    expect(within(preview).queryByText(/结果已就绪|result ready/i)).not.toBeInTheDocument()
+  })
+
   it('gives single semantic records a full-width readable card contract', () => {
-    const candidate = apiCatalog.find((api) => api.id === 'catfacts')
-    if (!candidate) throw new Error('Missing catfacts fixture')
-    const { container } = render(<ResponseDemoPreview api={candidate} data={{ fact: 'Cats use their whiskers to estimate whether a space is wide enough to enter.', length: 78 }}/>)
+    const candidate = apiCatalog.find((api) => api.id === 'gbif-species-search')
+    if (!candidate) throw new Error('Missing GBIF fixture')
+    const { container } = render(<ResponseDemoPreview api={candidate} data={{ count: 1, results: [{ scientificName: 'Felis catus', rank: 'SPECIES', taxonomicStatus: 'ACCEPTED', family: 'Felidae', genus: 'Felis' }] }}/>)
     const grid = container.querySelector('.semantic-card-grid')
 
     expect(grid).toHaveClass('single')
     expect(grid).toHaveAttribute('data-record-count', '1')
     expect(grid).toHaveAttribute('aria-label', 'Semantic response records')
     expect(grid?.querySelector('[data-record-index="1"]')).toBeInTheDocument()
-    expect(within(grid as HTMLElement).getByText(/Cats use their whiskers/)).toBeInTheDocument()
+    expect(within(grid as HTMLElement).getByText('Felis catus')).toBeInTheDocument()
   })
 })
 
@@ -816,7 +1094,7 @@ describe('new specialist API previews', () => {
     const preview = screen.getByRole('region', { name: 'Hebcal Calendar' })
     expect(preview).toHaveAttribute('data-preview-layout', 'calendar-timeline')
     expect(within(preview).getByText('Yom Kippur')).toBeInTheDocument()
-    expect(within(preview).getByText('Hebcal')).toBeInTheDocument()
+    expect(preview.querySelector('.calendar-preview')).toHaveTextContent('Hebcal')
   })
 
   it('compares Chess.com ratings and match records by time control', () => {
@@ -906,21 +1184,34 @@ describe('next keyless API previews', () => {
     expect(screen.getByRole('region', { name: 'Rick and Morty Characters' })).toHaveTextContent('Alive · Human · Citadel of Ricks')
   })
 
-  it('renders Jolpica F1 sessions as a data table', () => {
+  it('renders Jolpica F1 season data through the dataset-aware semantic layout', () => {
     render(<ResponseDemoPreview api={api('jolpica-f1')} data={{
       MRData: {
+        limit: '8',
+        total: '24',
         RaceTable: {
+          season: '2026',
           Races: [{
+            season: '2026',
+            round: '18',
             raceName: 'Singapore Grand Prix',
             date: '2026-09-19',
-            Circuit: { Location: { locality: 'Marina Bay' } },
+            time: '12:00:00Z',
+            Circuit: {
+              circuitId: 'marina_bay',
+              circuitName: 'Marina Bay Street Circuit',
+              Location: { lat: '1.2914', long: '103.8640', locality: 'Marina Bay', country: 'Singapore' },
+            },
           }],
         },
       },
     }}/>)
     const preview = screen.getByRole('region', { name: 'Jolpica F1 Data' })
-    expect(preview).toHaveAttribute('data-preview-layout', 'data-table')
+    expect(preview).toHaveAttribute('data-preview-layout', 'f1-season-catalog')
+    expect(preview.querySelector('.jolpica-f1-preview')).toHaveAttribute('data-dataset', 'races')
+    expect(preview.querySelector('[data-round="18"]')).toHaveAttribute('data-circuit-id', 'marina_bay')
     expect(preview).toHaveTextContent('Singapore Grand Prix')
+    expect(preview).toHaveTextContent('Marina Bay Street Circuit')
   })
 
   it('renders Swiss transit connections and new market APIs as dedicated layouts', () => {
@@ -948,25 +1239,29 @@ describe('next keyless API previews', () => {
 
     rerender(<ResponseDemoPreview api={api('nasa-power-climate')} data={{
       properties: {
-        parameters: {
-          T2M: {
-            data: { '2026-07-01': '28', '2026-07-02': '29' },
-            unit: '°C',
-            label: '2m Temperature',
-          },
+        parameter: {
+          T2M: { '20260630': -999, '20260701': 28, '20260702': 29 },
         },
+      },
+      header: { start: '20260630', end: '20260702', fill_value: -999 },
+      parameters: {
+        T2M: { units: 'C', longname: 'Temperature at 2 Meters' },
       },
     }}/>)
     const climatePreview = screen.getByRole('region', { name: 'NASA POWER Climate' })
     expect(climatePreview).toHaveAttribute('data-preview-layout', 'market-chart')
     expect(climatePreview).toHaveTextContent('NASA POWER')
-    expect(climatePreview).toHaveTextContent('29 °C')
+    expect(climatePreview).toHaveTextContent('Temperature at 2 Meters')
+    expect(climatePreview).toHaveTextContent('29 C')
+    expect(climatePreview).toHaveTextContent('2026-07-02')
+    expect(climatePreview).toHaveTextContent('Series length2')
+    expect(climatePreview).not.toHaveTextContent('-999')
 
-    rerender(<ResponseDemoPreview api={api('open-meteo-elevation')} data={{ latitude: 1.3521, longitude: 103.8197, elevation: 16.72 }}/>)
+    rerender(<ResponseDemoPreview api={api('open-meteo-elevation')} data={{ elevation: [16.72] }} requestUrl="https://api.open-meteo.com/v1/elevation?latitude=1.3521&longitude=103.8198&format=json"/>)
     const elevationPreview = screen.getByRole('region', { name: 'Open-Meteo Elevation' })
-    expect(elevationPreview).toHaveAttribute('data-preview-layout', 'data-table')
-    expect(elevationPreview).toHaveTextContent('Point 1')
-    expect(elevationPreview).toHaveTextContent('16.72 m')
+    expect(elevationPreview).toHaveAttribute('data-preview-layout', 'terrain-elevation')
+    expect(elevationPreview).toHaveTextContent('16.72 m terrain elevation')
+    expect(elevationPreview).toHaveTextContent('WGS84 1.3521, 103.8198')
   })
 
   it('maps Zippopotam postcode results into a location explorer', () => {
@@ -1549,10 +1844,22 @@ describe('browser-ready health remediation previews', () => {
   })
 
   it('renders remediated Treasury, FX, UNHCR, IFRC, and citation contracts', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('fiscal-data-treasury')} data={{ fiscal_year: 2026, toptier_code: '020', name: 'Department of the Treasury', abbreviation: 'TREAS', subtier_agency_count: 8, mission: 'Maintain a strong economy and manage the U.S. Government finances effectively.', website: 'https://www.treasury.gov/' }}/>)
-    const treasury = screen.getByRole('region', { name: 'U.S. Treasury Agency Profile' })
+    const { rerender } = render(<ResponseDemoPreview api={api('fiscal-data-treasury')} data={{ fiscal_year: 2026, toptier_code: '020', name: 'Department of the Treasury', abbreviation: 'TREAS', agency_id: 456, subtier_agency_count: 8, mission: 'Maintain a strong economy and manage the U.S. Government finances effectively.', website: 'https://www.treasury.gov/', congressional_justification_url: 'https://www.treasury.gov/cj', def_codes: [{ code: 'N', title: 'CARES Act', public_law: 'Emergency P.L. 116-136', disaster: 'covid_19' }] }}/>)
+    const treasury = screen.getByRole('region', { name: 'U.S. Treasury Agency Overview' })
+    expect(treasury).toHaveAttribute('data-preview-layout', 'federal-agency-overview')
     expect(treasury).toHaveTextContent('Department of the Treasury')
     expect(treasury).toHaveTextContent('Maintain a strong economy')
+    expect(treasury).toHaveTextContent('Overview, not spending totals')
+    expect(treasury).toHaveTextContent('CARES Act')
+
+    rerender(<ResponseDemoPreview api={api('usaspending')} data={{ spending_level: 'awards', limit: 1, results: [{ 'Award ID': 'FA521525P0037', 'Recipient Name': 'MCS OF TAMPA, INC.', 'Award Amount': 437441.54, 'Base Obligation Date': '2025-09-30', 'Awarding Agency': 'Department of Defense', 'Awarding Sub Agency': 'Department of the Air Force', 'Funding Agency': 'Department of Defense', 'Funding Sub Agency': 'Department of the Air Force', 'Contract Award Type': 'PURCHASE ORDER', Description: 'Installation of communications hardware and software.' }], page_metadata: { page: 1, hasNext: true }, messages: ['Search coverage note.'] }}/>)
+    const awards = screen.getByRole('region', { name: 'USAspending Contract Awards' })
+    expect(awards).toHaveAttribute('data-preview-layout', 'federal-awards')
+    expect(awards).toHaveTextContent('MCS OF TAMPA, INC.')
+    expect(awards).toHaveTextContent('$437,441.54')
+    expect(awards).toHaveTextContent('Base obligation date')
+    expect(awards).toHaveTextContent('PURCHASE ORDER')
+    expect(awards).not.toHaveTextContent('USAspending Contract Awards record 1')
 
     rerender(<ResponseDemoPreview api={api('ecb-fx-rates')} data={{ data: { currency: 'EUR', rates: { USD: '1.1599', GBP: '0.8593', SGD: '1.4708', BTC: '0.000010' } } }}/>)
     const fx = screen.getByRole('region', { name: 'Coinbase Exchange Rates' })
@@ -1565,10 +1872,13 @@ describe('browser-ready health remediation previews', () => {
     expect(vatRates).toHaveTextContent('1 EUR → USD')
     expect(vatRates).not.toHaveTextContent('VATComply API record 1')
 
-    rerender(<ResponseDemoPreview api={api('unhcr-refugees')} data={{ items: [{ year: 2024, coo: 'SYR', coo_name: 'Syrian Arab Republic', refugees: 6211475, asylum_seekers: 150000, idps: 7200000, stateless: 0 }] }}/>)
+    rerender(<ResponseDemoPreview api={api('unhcr-refugees')} data={{ items: [{ year: 2025, coo: 'SYR', coo_iso: 'SYR', coo_name: 'Syrian Arab Rep.', refugees: 4865764, asylum_seekers: 154355, returned_refugees: 1341148, idps: 5542227, returned_idps: 1964201, stateless: '0' }] }}/>)
     const unhcr = screen.getByRole('region', { name: 'UNHCR Refugee Statistics' })
-    expect(unhcr).toHaveTextContent('Syrian Arab Republic')
-    expect(unhcr).toHaveTextContent('6,211,475')
+    expect(unhcr).toHaveAttribute('data-preview-layout', 'refugee-population')
+    expect(unhcr).toHaveTextContent('Syrian Arab Rep. · 2025')
+    expect(unhcr).toHaveTextContent('4,865,764')
+    expect(unhcr).toHaveTextContent('1,341,148')
+    expect(unhcr).toHaveTextContent('1,964,201')
 
     rerender(<ResponseDemoPreview api={api('hdx-humanitarian-datasets')} data={{ results: [{ dtype: { name: 'Flood' }, countries: [{ name: 'Philippines' }], ifrc_severity_level_display: 'Yellow', disaster_start_date: '2026-08-29T00:00:00Z', summary: 'Philippines flood emergency', description: 'Heavy rainfall and flooding.', field_reports: [{ num_affected: 1588424, num_dead: 31, num_displaced: 83580 }] }] }}/>)
     const ifrc = screen.getByRole('region', { name: 'IFRC GO Emergency Events' })
@@ -1576,15 +1886,18 @@ describe('browser-ready health remediation previews', () => {
     expect(ifrc).toHaveTextContent('1,588,424')
     expect(ifrc).toHaveTextContent('Yellow')
 
-    rerender(<ResponseDemoPreview api={api('opencitations-index')} data={[{ count: '98' }]}/>)
+    rerender(<ResponseDemoPreview api={api('opencitations-index')} data={[{ count: '98' }]} requestUrl="https://api.opencitations.net/index/v2/citation-count/doi:10.1109%2F5.771073"/>)
     const citations = screen.getByRole('region', { name: 'OpenCitations Citation Count' })
-    expect(citations).toHaveTextContent('Incoming citation count')
-    expect(citations).toHaveTextContent('98')
+    expect(citations).toHaveAttribute('data-preview-layout', 'citation-count')
+    expect(citations).toHaveTextContent('98 incoming citations')
+    expect(citations).toHaveTextContent('10.1109/5.771073')
 
 
-    rerender(<ResponseDemoPreview api={api('geoboundaries-admin-boundaries')} data={{ boundaryName: 'Singapore', boundaryISO: 'SGP', boundaryType: 'ADM0', boundaryYearRepresented: '2016', meanAreaSqKM: '724.2749814174942', boundaryLicense: 'Open Data Commons Open Database License 1.0', boundarySource: 'Urban Redevelopment Authority' }}/>)
+    rerender(<ResponseDemoPreview api={api('geoboundaries-admin-boundaries')} data={{ boundaryID: 'SGP-ADM0-21272760', boundaryName: 'Singapore', boundaryISO: 'SGP', boundaryType: 'ADM0', boundaryYearRepresented: '2016', admUnitCount: '1', meanAreaSqKM: '724.2749814174942', boundaryLicense: 'Open Data Commons Open Database License 1.0', boundarySource: 'Urban Redevelopment Authority', gjDownloadURL: 'https://example.test/sgp.geojson' }}/>)
     const boundary = screen.getByRole('region', { name: 'geoBoundaries Admin Boundaries' })
-    expect(boundary).toHaveTextContent('Singapore')
+    expect(boundary).toHaveAttribute('data-preview-layout', 'boundary-layer')
+    expect(boundary).toHaveTextContent('Singapore · ADM0')
+    expect(boundary).toHaveTextContent('Mean administrative-unit area')
     expect(boundary).toHaveTextContent('ADM0')
     expect(boundary).toHaveTextContent('Open Data Commons Open Database License 1.0')
   })

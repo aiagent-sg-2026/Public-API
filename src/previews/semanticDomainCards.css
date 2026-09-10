@@ -1,0 +1,224 @@
+/* AlAdhan prayer schedule: semantic daily timings plus calendar/method context. */
+.prayer-time-list { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr)); gap: 10px; list-style: none; }
+.prayer-time-list li { min-width: 0; padding: 14px; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; border: 1px solid #d7e1ec; border-radius: 11px; background: #fff; }
+.prayer-time-list li > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: #4a5f7b; background: #eef3f8; font: 750 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.prayer-time-list li div { min-width: 0; }
+.prayer-time-list strong, .prayer-time-list small { display: block; }
+.prayer-time-list strong { color: #23344d; }
+.prayer-time-list small { margin-top: 2px; color: #708096; font-size: 11px; }
+.prayer-time-list time { color: #173f70; font: 750 18px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.prayer-extra { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.prayer-extra > h4 { margin-bottom: 12px; }
+.prayer-extra dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(120px, 100%), 1fr)); gap: 10px; }
+.prayer-extra dl > div { min-width: 0; padding: 11px 12px; border-radius: 9px; background: #f5f8fb; }
+.prayer-extra dt { color: #67788e; font-size: 11px; }
+.prayer-extra dd { margin: 4px 0 0; color: #2c405c; font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* NOAA CO-OPS: latest observed height, datum, timing, and provider QA/QC remain explicit. */
+.tide-reading { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 18px; margin: 18px 0; padding: 20px; border: 1px solid #c9dce9; border-radius: 13px; background: #f5fbfe; }
+.tide-reading > div { min-width: 0; }
+.tide-reading > div > span { display: block; color: #4f6b7d; font-size: 12px; font-weight: 700; }
+.tide-reading > div > strong { display: block; margin: 6px 0; color: #123f5b; font-size: clamp(34px, 6cqi, 58px); line-height: 1.08; letter-spacing: -.04em; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tide-reading > div > strong small { font-size: 18px; letter-spacing: 0; }
+.tide-reading > div > p { color: #587184; font-size: 12px; }
+.tide-reading > dl { margin: 0; display: grid; gap: 10px; }
+.tide-reading > dl > div { min-width: 0; padding: 11px 12px; border-radius: 9px; background: #fff; }
+.tide-reading dt, .tide-quality dt { color: #60758a; font-size: 11px; }
+.tide-reading dd, .tide-quality dd { margin: 4px 0 0; color: #223c53; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.tide-quality { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.tide-quality h4 { margin-bottom: 12px; }
+.tide-quality dl { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(170px, 100%), 1fr)); gap: 10px; }
+.tide-quality dl > div { min-width: 0; padding: 12px; border: 1px solid #e0e8f0; border-radius: 9px; background: #fff; }
+@container domain-card (max-width: 620px) {
+  .tide-reading { grid-template-columns: 1fr; padding: 16px; }
+}
+
+/* Environment Agency station search: returned station identity and available measures, not invented live readings. */
+.flood-station-list { margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.flood-station-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.flood-station-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.flood-station-list > li > header div { min-width: 0; }
+.flood-station-list > li > header small { display: block; color: #60758a; font-size: 11px; }
+.flood-station-list > li > header span { color: #365069; font-size: 12px; font-weight: 750; }
+.flood-station-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr)); gap: 10px; margin: 14px 0; }
+.flood-measures { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e3e9f0; }
+.flood-measures h4 { font-size: 14px; }
+.flood-measures ul { margin: 9px 0 0; padding: 0; display: grid; gap: 6px; list-style: none; }
+.flood-measures li { min-width: 0; padding: 8px 10px; border-radius: 8px; background: #f4f7fa; color: #40556f; font-size: 12px; overflow-wrap: anywhere; }
+.flood-measures p { margin-top: 8px; color: #60758a; font-size: 12px; }
+@container domain-card (max-width: 620px) { .flood-station-list { grid-template-columns: 1fr; } }
+
+/* OpenFEMA: area-level declaration rows must stay distinguishable when one disaster repeats across counties. */
+.fema-declaration-list, .food-hygiene-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.fema-declaration-list > li, .food-hygiene-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.fema-declaration-list > li > header, .food-hygiene-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.fema-declaration-list > li > header div, .food-hygiene-list > li > header div { min-width: 0; }
+.fema-declaration-list > li > header small, .food-hygiene-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.fema-declaration-list > li > header span, .food-hygiene-list > li > header span { color: #365069; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.fema-declaration-title, .food-hygiene-list > li > p { margin-top: 10px; color: #435972; line-height: 1.5; overflow-wrap: anywhere; }
+.fema-declaration-list .domain-facts, .food-hygiene-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+.food-hygiene-scores { margin-top: 14px; padding-top: 13px; border-top: 1px solid #e3e9f0; }
+.food-hygiene-scores h4 { font-size: 14px; }
+.food-hygiene-scores > p { margin-top: 8px; color: #60758a; font-size: 12px; }
+.cpi-trend { margin-top: 18px; padding-top: 16px; border-top: 1px solid #dce4ef; }
+.cpi-trend h4 { margin-bottom: 10px; }
+.cpi-trend ol { margin: 12px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(125px, 100%), 1fr)); gap: 7px; list-style: none; }
+.cpi-trend li { display: flex; justify-content: space-between; gap: 8px; min-width: 0; padding: 8px 9px; border-radius: 8px; background: #f4f7fa; color: #40556f; font-size: 12px; }
+.cpi-trend li strong { color: #203149; font-variant-numeric: tabular-nums; }
+@container domain-card (max-width: 620px) { .fema-declaration-list, .food-hygiene-list { grid-template-columns: 1fr; } }
+
+/* Malaysia HIES and population totals: explicit observation periods and units. */
+.income-trends { margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.income-trends article { min-width: 0; padding: 13px; border: 1px solid #dce4ef; border-radius: 10px; background: #fff; }
+.income-trends h4 { margin-bottom: 8px; font-size: 13px; }
+.income-observations, .population-observations { margin: 14px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); gap: 8px; list-style: none; }
+.income-observations li, .population-observations li { min-width: 0; padding: 10px; border-radius: 9px; background: #f4f7fa; color: #40556f; font-size: 12px; }
+.income-observations li { display: grid; gap: 4px; }
+.population-observations li { display: flex; justify-content: space-between; gap: 8px; }
+.income-observations strong, .population-observations strong { color: #203149; font-variant-numeric: tabular-nums; }
+
+/* IFRC GO: source-aware event and field-report impact semantics. */
+.humanitarian-event-list { margin: 18px 0 0; padding: 0; display: grid; gap: 14px; list-style: none; }
+.humanitarian-event-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.humanitarian-event-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.humanitarian-event-list > li > header div { min-width: 0; }
+.humanitarian-event-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.humanitarian-event-list > li > header span { color: #365069; font-size: 12px; font-weight: 750; }
+.humanitarian-event-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+.humanitarian-summary { margin-top: 12px; color: #435972; line-height: 1.55; overflow-wrap: anywhere; }
+.humanitarian-impact { margin-top: 15px; padding-top: 14px; border-top: 1px solid #e3e9f0; }
+.humanitarian-impact-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.humanitarian-impact-grid article { min-width: 0; padding: 10px; border-radius: 9px; background: #f4f7fa; }
+.humanitarian-impact-grid article > strong { color: #263d59; font-size: 12px; }
+.humanitarian-impact-grid dl { margin: 8px 0 0; display: grid; gap: 5px; }
+.humanitarian-impact-grid dl > div { display: flex; justify-content: space-between; gap: 8px; }
+.humanitarian-impact-grid dt { color: #60758a; font-size: 11px; }
+.humanitarian-impact-grid dd { margin: 0; font-weight: 700; font-variant-numeric: tabular-nums; }
+@container domain-card (max-width: 620px) { .income-trends, .humanitarian-impact-grid { grid-template-columns: 1fr; } }
+
+/* USAspending: agency overview and award-level federal contract semantics. */
+.federal-agency-mission, .federal-agency-links, .federal-def-codes, .federal-award-messages { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.federal-agency-mission p, .federal-award-description, .federal-award-messages li { color: #40556f; line-height: 1.6; overflow-wrap: anywhere; }
+.federal-agency-mission p { margin-top: 8px; }
+.federal-agency-links ul { margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 9px; list-style: none; }
+.federal-agency-links a { min-height: 44px; display: inline-flex; align-items: center; padding: 9px 12px; border: 1px solid #cdd8e5; border-radius: 9px; background: #fff; color: #1555bf; font-weight: 650; overflow-wrap: anywhere; }
+.federal-def-codes > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: baseline; }
+.federal-def-codes > header span { color: #62758d; font-size: 12px; font-weight: 650; }
+.federal-def-codes ol, .federal-award-list { margin: 12px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+.federal-def-codes li { min-width: 0; display: grid; grid-template-columns: minmax(36px, auto) minmax(0, 1fr); gap: 10px; padding: 11px 12px; border-radius: 9px; background: #f4f7fa; }
+.federal-def-codes li > strong { color: #234563; font: 760 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.federal-def-codes li div { min-width: 0; display: grid; gap: 3px; }
+.federal-def-codes li span, .federal-def-codes li small { overflow-wrap: anywhere; }
+.federal-def-codes li small { color: #6a7b90; }
+.federal-award-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.federal-award-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.federal-award-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.federal-award-list > li > header div { min-width: 0; }
+.federal-award-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.federal-award-list > li > header h4 { overflow-wrap: anywhere; }
+.federal-award-list > li > header span { max-width: 100%; color: #365069; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+.federal-award-amount { margin: 14px 0; padding: 13px; border-radius: 10px; background: #f2f7fb; }
+.federal-award-amount > span, .federal-award-amount > small { display: block; color: #60758a; font-size: 11px; }
+.federal-award-amount strong { display: block; margin: 5px 0; color: #173f70; font-size: clamp(23px, 4cqi, 34px); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.federal-award-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 9px; }
+.federal-award-description { margin-top: 13px; }
+.federal-award-messages ul { margin: 10px 0 0; padding-left: 20px; display: grid; gap: 8px; }
+@container domain-card (max-width: 620px) { .federal-award-list { grid-template-columns: 1fr; } }
+
+/* Wikidata SPARQL: stable QID/URI/label identity from bounded result bindings. */
+.wikidata-entity-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; list-style: none; }
+.wikidata-entity-list > li { min-width: 0; padding: 15px; border: 1px solid #d7e1ec; border-radius: 11px; background: #fff; }
+.wikidata-entity-list > li > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.wikidata-entity-list > li > header div { min-width: 0; }
+.wikidata-entity-list > li > header small { display: block; color: #60758a; font-size: 11px; }
+.wikidata-entity-list > li > header h4 { margin-top: 3px; color: #263d59; overflow-wrap: anywhere; }
+.wikidata-entity-list > li > header code { flex: 0 0 auto; padding: 5px 7px; border-radius: 7px; background: #eef6f0; color: #24613b; font-weight: 750; }
+.wikidata-entity-list .domain-facts { grid-template-columns: 1fr; gap: 7px; margin-top: 12px; }
+.wikidata-entity-list .domain-facts code { overflow-wrap: anywhere; word-break: break-word; }
+.opencitations-preview .domain-facts code { overflow-wrap: anywhere; word-break: break-word; }
+@container domain-card (max-width: 620px) { .wikidata-entity-list { grid-template-columns: 1fr; } }
+
+/* UNSD goal catalogue: all returned goals remain semantic and readable without a generic table. */
+.sdg-goal-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; list-style: none; }
+.sdg-goal-list > li { min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 12px; padding: 16px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.sdg-goal-number { width: 44px; height: 44px; display: grid; place-items: center; border-radius: 10px; background: #edf7fb; color: #155b77; font-weight: 800; font-variant-numeric: tabular-nums; }
+.sdg-goal-list small { color: #60758a; font-weight: 700; }
+.sdg-goal-list h4 { margin-top: 3px; color: #233d58; line-height: 1.35; overflow-wrap: anywhere; }
+.sdg-goal-list p { margin-top: 8px; color: #435972; line-height: 1.55; overflow-wrap: anywhere; }
+.sdg-goal-list code { display: block; margin-top: 10px; color: #1555bf; font-size: 11px; overflow-wrap: anywhere; }
+
+/* CelesTrak GP JSON: OMM field semantics, not a real-time tracker. */
+.satellite-orbit-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.satellite-orbit-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.satellite-orbit-list > li > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.satellite-orbit-list > li > header div { min-width: 0; }
+.satellite-orbit-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.satellite-orbit-list > li > header h4 { margin-top: 3px; color: #243b55; overflow-wrap: anywhere; }
+.satellite-orbit-list > li > header span { color: #365069; font-size: 12px; font-weight: 750; }
+.satellite-orbit-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+@container domain-card (max-width: 620px) { .sdg-goal-list, .satellite-orbit-list { grid-template-columns: 1fr; } }
+
+/* Biodiversity contracts: occurrence evidence, accepted-name resolution, and fossil-count scope. */
+.biodiversity-record-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.biodiversity-record-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.biodiversity-record-list > li > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.biodiversity-record-list > li > header div { min-width: 0; }
+.biodiversity-record-list > li > header small, .biodiversity-record-list > li > header p { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.biodiversity-record-list > li > header h4 { margin-top: 3px; color: #263d59; overflow-wrap: anywhere; }
+.biodiversity-record-list > li > header > span { color: #365069; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.biodiversity-record-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+.biodiversity-note { margin-top: 11px; color: #40556f; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.biodiversity-note code { overflow-wrap: anywhere; word-break: break-word; }
+.biodiversity-flags { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 7px; }
+.biodiversity-flags span { padding: 6px 8px; border-radius: 8px; background: #f0f5f8; color: #405a70; font: 700 10px ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+.accepted-name-callout { margin-top: 14px; padding: 12px; display: grid; gap: 4px; border-left: 3px solid #2b7a68; border-radius: 8px; background: #eef8f4; }
+.accepted-name-callout strong { color: #285847; font-size: 11px; text-transform: uppercase; }
+.accepted-name-callout span { color: #1f4b3e; font-weight: 750; overflow-wrap: anywhere; }
+.accepted-name-callout small { color: #587468; line-height: 1.45; }
+@container domain-card (max-width: 620px) { .biodiversity-record-list { grid-template-columns: 1fr; } }
+
+/* IP geolocation: keep approximate network location distinct from precise device position. */
+.ipwhois-summary { margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.ipwhois-summary > section { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.ipwhois-summary h4 { color: #263d59; }
+.ipwhois-summary > section > strong { display: block; margin-top: 7px; color: #173f70; overflow-wrap: anywhere; }
+.ipwhois-summary .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 8px; margin-top: 14px; }
+
+/* geoBoundaries metadata endpoint: provenance + geometry downloads, not an embedded polygon. */
+.geoboundaries-provenance, .geoboundaries-downloads { margin-top: 20px; padding-top: 17px; border-top: 1px solid #dce4ef; }
+.geoboundaries-provenance p { margin-top: 8px; color: #40556f; line-height: 1.55; overflow-wrap: anywhere; }
+.geoboundaries-downloads ul { margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 9px; list-style: none; }
+.geoboundaries-downloads a { min-height: 44px; display: inline-flex; align-items: center; padding: 9px 12px; border: 1px solid #cdd8e5; border-radius: 9px; background: #fff; color: #1555bf; font-weight: 650; overflow-wrap: anywhere; }
+.geoboundaries-preview .domain-facts code { overflow-wrap: anywhere; word-break: break-word; }
+@container domain-card (max-width: 620px) { .ipwhois-summary { grid-template-columns: 1fr; } }
+
+
+/* UK Parliament Members API: current Commons/Lords identity and latest-house membership semantics. */
+.parliament-result-context { margin: 18px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.parliament-result-context span { min-width: 0; padding: 10px 12px; border-radius: 9px; background: #f4f7fa; color: #53677e; font-size: 12px; }
+.parliament-result-context strong { display: block; margin-bottom: 3px; color: #243b55; font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.parliament-member-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.parliament-member-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.parliament-member-list > li > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.parliament-member-list > li > header div { min-width: 0; }
+.parliament-member-list > li > header small, .parliament-member-list > li > header p { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.parliament-member-list > li > header h4 { margin-top: 3px; color: #263d59; overflow-wrap: anywhere; }
+.parliament-member-list > li > header > span { max-width: 100%; color: #365069; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.parliament-member-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+@container domain-card (max-width: 620px) { .parliament-result-context, .parliament-member-list { grid-template-columns: 1fr; } }
+
+/* Government of Canada CKAN: dataset/publication catalogue identity, licence, bilingual metadata, and resources. */
+.canada-catalog-context { margin: 18px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; }
+.canada-catalog-context span { min-width: 0; padding: 10px 12px; border-radius: 9px; background: #f4f7fa; color: #53677e; font-size: 12px; }
+.canada-catalog-context strong { display: block; margin-bottom: 3px; color: #243b55; font-size: 16px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.canada-catalog-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.canada-catalog-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.canada-catalog-list > li > header { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.canada-catalog-list > li > header div { min-width: 0; }
+.canada-catalog-list > li > header small, .canada-catalog-list > li > header p { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.canada-catalog-list > li > header h4 { margin-top: 3px; color: #263d59; overflow-wrap: anywhere; }
+.canada-catalog-list > li > header > span { max-width: 100%; color: #365069; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.canada-catalog-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(145px, 100%), 1fr)); gap: 9px; margin-top: 14px; }
+.canada-record-description { margin-top: 13px; color: #40556f; line-height: 1.55; overflow-wrap: anywhere; }
+.canada-record-description-fr { padding-top: 10px; border-top: 1px dashed #dce4ef; color: #5a6d82; }
+@container domain-card (max-width: 620px) { .canada-catalog-context, .canada-catalog-list { grid-template-columns: 1fr; } }

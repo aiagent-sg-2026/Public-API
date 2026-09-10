@@ -1,0 +1,15 @@
+/* Route summary loads with the lazy response-preview chunk. */
+.preview-route-summary .semantic-card-grid header > span { color: #245b71; background: #e8f4f8; }
+.route-step-panel { margin-top: 12px; padding: 15px; border: 1px solid #dfe6ef; border-radius: 12px; background: #fff; }
+.route-step-panel > header { display: flex; align-items: end; justify-content: space-between; gap: 12px; }
+.route-step-panel > header small { color: #8390a4; font-weight: 700; text-transform: uppercase; }
+.route-step-panel > header h3 { margin: 3px 0 0; color: #1e2d47; }
+.route-step-panel > header > span { color: #718096; font-size: 12px; font-weight: 700; }
+.route-step-panel ol { margin: 13px 0 0; padding: 0; display: grid; gap: 7px; list-style: none; }
+.route-step-panel li { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 9px; padding-top: 8px; border-top: 1px solid #edf1f5; }
+.route-step-panel li > span { width: 30px; height: 30px; display: grid; place-items: center; border-radius: 8px; color: #3d647c; background: #e9f3f7; font: 760 9px ui-monospace, SFMono-Regular, Menlo, monospace; }
+.route-step-panel li div { min-width: 0; display: grid; gap: 2px; }
+.route-step-panel li b { color: #718096; font-size: 10px; text-transform: uppercase; }
+.route-step-panel li strong { overflow-wrap: anywhere; color: #25354d; }
+.route-step-panel li small, .route-step-panel > p { color: #748196; }
+.route-step-panel > p { margin: 12px 0 0; line-height: 1.5; }

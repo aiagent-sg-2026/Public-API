@@ -1,3 +1,4 @@
+import './operationalCards.css'
 import { SemanticCards, type SemanticCard } from './SemanticCards'
 import { cleanText, formatNumber, isRecord, numberValue, previewValue, recordArray, textArray, textValue } from './previewData'
 

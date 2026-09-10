@@ -1,0 +1,46 @@
+/* OpenDota: match-end kills and the explicit winner field must not be conflated with a series score. */
+.opendota-match-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.opendota-match-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.opendota-match-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.opendota-match-list > li > header div { min-width: 0; }
+.opendota-match-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.opendota-match-list > li > header h4 { margin-top: 4px; overflow-wrap: anywhere; }
+.opendota-match-list > li > header > span { color: #365069; font-size: 12px; font-weight: 750; overflow-wrap: anywhere; }
+.opendota-score { margin-top: 13px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.opendota-score > div { min-width: 0; padding: 11px; border-radius: 9px; background: #f4f7fa; }
+.opendota-score span, .opendota-score strong, .opendota-score b { display: block; }
+.opendota-score span { color: #60758a; font-size: 10px; font-weight: 750; text-transform: uppercase; }
+.opendota-score strong { margin-top: 4px; color: #263d59; overflow-wrap: anywhere; }
+.opendota-score b { margin-top: 7px; color: #173f70; font-size: 20px; font-variant-numeric: tabular-nums; }
+.opendota-score b small { font-size: 11px; font-weight: 650; }
+.opendota-match-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(125px, 100%), 1fr)); gap: 8px; margin-top: 13px; }
+@container domain-card (max-width: 620px) { .opendota-match-list { grid-template-columns: 1fr; } }
+@container domain-card (max-width: 390px) { .opendota-score { grid-template-columns: 1fr; } }
+
+/* Jolpica F1: three selectable provider shapes need dataset-aware semantic records. */
+.jolpica-season-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.jolpica-season-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.jolpica-season-list > li > header { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.jolpica-season-list > li > header div { min-width: 0; }
+.jolpica-season-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.jolpica-season-list > li > header h4 { margin-top: 3px; color: #263d59; overflow-wrap: anywhere; }
+.jolpica-season-list > li > header > span { max-width: 100%; color: #365069; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+.jolpica-season-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 8px; margin-top: 13px; }
+.domain-reference-link { min-height: 44px; margin-top: 13px; display: inline-flex; align-items: center; padding: 9px 12px; border: 1px solid #cdd8e5; border-radius: 9px; background: #fff; color: #1555bf; font-weight: 650; }
+@container domain-card (max-width: 620px) { .jolpica-season-list { grid-template-columns: 1fr; } }
+
+/* Schedule/results surfaces: use the provider's typed result/status semantics and keep teams readable on narrow cards. */
+.sports-schedule-list { margin: 18px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; list-style: none; }
+.sports-schedule-list > li { min-width: 0; padding: 17px; border: 1px solid #d7e1ec; border-radius: 12px; background: #fff; }
+.sports-schedule-list > li > header { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 10px; }
+.sports-schedule-list > li > header div { min-width: 0; }
+.sports-schedule-list > li > header small { display: block; color: #60758a; font-size: 11px; overflow-wrap: anywhere; }
+.sports-schedule-list > li > header h4 { margin-top: 4px; color: #263d59; overflow-wrap: anywhere; }
+.sports-schedule-list > li > header > span { color: #365069; font-size: 11px; font-weight: 750; overflow-wrap: anywhere; }
+.sports-score { margin-top: 13px; display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto minmax(0, 1fr); align-items: center; gap: 8px; padding: 11px; border-radius: 9px; background: #f4f7fa; }
+.sports-score strong { min-width: 0; color: #263d59; overflow-wrap: anywhere; }
+.sports-score strong:last-child { text-align: right; }
+.sports-score b { color: #173f70; font-size: 20px; font-variant-numeric: tabular-nums; }
+.sports-schedule-list .domain-facts { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); gap: 8px; margin-top: 13px; }
+@container domain-card (max-width: 620px) { .sports-schedule-list { grid-template-columns: 1fr; } }
+@container domain-card (max-width: 390px) { .sports-score { grid-template-columns: 1fr auto 1fr; } .sports-score > strong:first-child { grid-column: 1; } .sports-score > b:nth-of-type(1) { grid-column: 2; } .sports-score > span[aria-hidden="true"] { display: none; } .sports-score > b:nth-of-type(2) { grid-column: 2; grid-row: 2; } .sports-score > strong:last-child { grid-column: 3; grid-row: 2; } }

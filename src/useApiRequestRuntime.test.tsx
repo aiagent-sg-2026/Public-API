@@ -28,6 +28,7 @@ function RuntimeHarness({ api: activeApi, values = getDefaultParameters(activeAp
         data-status={request.status}
         data-error-type={request.status === 'error' ? request.errorType : undefined}
         data-http-status={request.status === 'success' || request.status === 'error' ? request.httpStatus : undefined}
+        data-run-id={request.status === 'success' ? request.runId : undefined}
       >
         {request.status === 'success' ? JSON.stringify(request.data) : request.status === 'error' ? request.message : request.status}
       </output>
@@ -59,6 +60,46 @@ describe('useApiRequestRuntime', () => {
     expect(screen.getByTestId('request-state')).toHaveAttribute('data-http-status', '200')
     expect(onRunStart).toHaveBeenCalledWith(countries, getDefaultParameters(countries))
     expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('assigns a new success run ID even when a POST API keeps the same request URL', async () => {
+    const aniList = api('anilist-graphql')
+    const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ data: { Page: { pageInfo: {}, media: [] } } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { rerender } = render(<RuntimeHarness api={aniList} values={{ query: 'One', mediaType: 'ANIME', page: '1', limit: '6' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-run-id', '1'))
+
+    rerender(<RuntimeHarness api={aniList} values={{ query: 'Two', mediaType: 'ANIME', page: '1', limit: '6' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-run-id', '2'))
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock.mock.calls[0]?.[0]).toBe(fetchMock.mock.calls[1]?.[0])
+  })
+
+  it('sends provider-identification headers from the shared API SSOT', async () => {
+    const wikidata = api('wikidata-sparql')
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ head: { vars: [] }, results: { bindings: [] } }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/sparql-results+json' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    render(<RuntimeHarness api={wikidata} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'success'))
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit | undefined
+    expect(init?.headers).toMatchObject({
+      Accept: 'application/sparql-results+json',
+      'Api-User-Agent': 'Public-API/0.1 (https://yapweijun1996.github.io/Public-API/)',
+    })
   })
 
   it('rejects invalid select input before any provider request', async () => {

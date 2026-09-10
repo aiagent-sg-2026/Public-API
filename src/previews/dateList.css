@@ -1,0 +1,17 @@
+/* Date-list primitive; loaded with the shared DateList module. */
+.calendar-preview { margin: 0; padding: 0; list-style: none; }
+.calendar-preview { margin-top: 18px; }
+.calendar-preview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.calendar-preview li { min-width: 0; padding: 12px; display: grid; grid-template-columns: 49px minmax(0, 1fr); align-items: center; gap: 12px; border: 1px solid #e0e6ee; border-radius: 10px; background: #fbfcfe; }
+.calendar-preview time { height: 51px; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 9px; color: #fff; background: linear-gradient(145deg, #ef7e4a, #d65b45); }
+.calendar-preview time strong { font-size: 18px; line-height: 1; }
+.calendar-preview time span { margin-top: 3px; font-weight: 700; text-transform: uppercase; }
+.calendar-preview li > div { min-width: 0; }
+.calendar-preview small { color: #8995a7; text-transform: uppercase; }
+.calendar-preview h3 { margin: 3px 0 0; overflow: hidden; color: #25344e; text-overflow: ellipsis; white-space: nowrap; }
+.calendar-preview p { margin: 4px 0 0; color: #738097; }
+
+
+@media (max-width: 760px) {
+  .calendar-preview { grid-template-columns: 1fr; }
+}
