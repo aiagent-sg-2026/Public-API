@@ -29,6 +29,9 @@ function RuntimeHarness({ api: activeApi, values = getDefaultParameters(activeAp
         data-error-type={request.status === 'error' ? request.errorType : undefined}
         data-http-status={request.status === 'success' || request.status === 'error' ? request.httpStatus : undefined}
         data-run-id={request.status === 'success' ? request.runId : undefined}
+        data-request-method={request.status === 'success' ? request.executedRequest.method : undefined}
+        data-request-url={request.status === 'success' ? request.executedRequest.url : undefined}
+        data-request-body={request.status === 'success' && request.executedRequest.body !== undefined ? JSON.stringify(request.executedRequest.body) : undefined}
       >
         {request.status === 'success' ? JSON.stringify(request.data) : request.status === 'error' ? request.message : request.status}
       </output>
@@ -80,6 +83,13 @@ describe('useApiRequestRuntime', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(fetchMock.mock.calls[0]?.[0]).toBe(fetchMock.mock.calls[1]?.[0])
+    const state = screen.getByTestId('request-state')
+    expect(state).toHaveAttribute('data-request-method', 'POST')
+    expect(state).toHaveAttribute('data-request-url', aniList.buildUrl({ query: 'Two', mediaType: 'ANIME', page: '1', limit: '6' }))
+    const expectedBody = aniList.buildBody?.({ query: 'Two', mediaType: 'ANIME', page: '1', limit: '6' })
+    expect(JSON.parse(state.getAttribute('data-request-body') ?? '{}')).toEqual(expectedBody)
+    const secondInit = fetchMock.mock.calls[1]?.[1] as RequestInit | undefined
+    expect(JSON.parse(String(secondInit?.body))).toEqual(expectedBody)
   })
 
   it('sends provider-identification headers from the shared API SSOT', async () => {
@@ -113,6 +123,24 @@ describe('useApiRequestRuntime', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 
+  it('rejects blank, fractional, and out-of-range Art Institute inputs before provider execution', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const art = api('art-institute-search')
+    const { rerender } = render(<RuntimeHarness api={art} values={{ query: '   ', limit: '8' }} />)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'idle'))
+    rerender(<RuntimeHarness api={art} values={{ query: 'monet', limit: '2.5' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'idle'))
+    rerender(<RuntimeHarness api={art} values={{ query: 'monet', limit: '21' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'idle'))
+
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
   it('classifies browser fetch TypeError as network-or-cors', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')))
 
@@ -137,6 +165,28 @@ describe('useApiRequestRuntime', () => {
     expect(screen.getByTestId('request-state')).toHaveAttribute('data-error-type', 'invalid-response')
     expect(screen.getByTestId('request-state')).toHaveAttribute('data-http-status', '200')
     expect(screen.getByTestId('request-state')).toHaveTextContent('could not be parsed as expected')
+  })
+
+  it('maps a provider-declared 204 no-content response to API-specific semantic empty data', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    render(<RuntimeHarness api={api('worms-species-lookup')} values={{ name: 'DefinitelyNotARealMarineTaxonXYZ' }} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'success'))
+    expect(screen.getByTestId('request-state')).toHaveAttribute('data-http-status', '204')
+    expect(screen.getByTestId('request-state')).toHaveTextContent('[]')
+  })
+
+  it('keeps undeclared empty JSON success responses fail-closed', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(null, { status: 204 })))
+
+    render(<RuntimeHarness api={api('countries')} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Run request' }))
+
+    await waitFor(() => expect(screen.getByTestId('request-state')).toHaveAttribute('data-status', 'error'))
+    expect(screen.getByTestId('request-state')).toHaveAttribute('data-error-type', 'invalid-response')
+    expect(screen.getByTestId('request-state')).toHaveAttribute('data-http-status', '204')
   })
 
   it('classifies HTTP failure before invoking an explicit non-JSON response parser', async () => {

@@ -189,7 +189,7 @@ export function useWebMcp({
             agentExecution: getAgentExecutionPolicy(api),
             automatedVerification: getAutomatedVerificationPolicy(api),
             ...(api.usageNote ? { usageNote: api.usageNote } : {}),
-            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, minimumFromField, minLength, maxLength, pattern, patternDescription, options }) => ({
+            parameters: api.fields.map(({ id, label, type, defaultValue, help, min, max, step, minimumFromField, minLength, maxLength, pattern, patternDescription, options }) => ({
               id,
               label,
               type,
@@ -197,6 +197,7 @@ export function useWebMcp({
               help,
               ...(min === undefined ? {} : { min }),
               ...(max === undefined ? {} : { max }),
+              ...(step === undefined ? {} : { step }),
               ...(minimumFromField === undefined ? {} : { minimumFromField }),
               ...(minLength === undefined ? {} : { minLength }),
               ...(maxLength === undefined ? {} : { maxLength }),

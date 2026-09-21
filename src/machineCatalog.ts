@@ -5,6 +5,7 @@ export const MACHINE_CATALOG_SCHEMA_VERSION = 1 as const
 export type MachineCatalogParameter = Pick<ApiField, 'id' | 'label' | 'type' | 'defaultValue' | 'help'> & {
   min?: number
   max?: number
+  step?: number
   minimumFromField?: string
   minLength?: number
   maxLength?: number
@@ -25,7 +26,7 @@ export type MachineCatalogApi = {
   keyRequired: false
   requestLabUrl: string
   agentExecution: ReturnType<typeof getAgentExecutionPolicy>
-  automatedVerification?: Extract<ReturnType<typeof getAutomatedVerificationPolicy>, { mode: 'cadence-limited' }>
+  automatedVerification?: ReturnType<typeof getAutomatedVerificationPolicy>
   usageNote?: string
   parameters: MachineCatalogParameter[]
 }
@@ -45,7 +46,7 @@ const normalizeBase = (base: string): string => {
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`
 }
 
-const exportParameter = ({ id, label, type, defaultValue, help, min, max, minimumFromField, minLength, maxLength, pattern, patternDescription, options }: ApiField): MachineCatalogParameter => ({
+const exportParameter = ({ id, label, type, defaultValue, help, min, max, step, minimumFromField, minLength, maxLength, pattern, patternDescription, options }: ApiField): MachineCatalogParameter => ({
   id,
   label,
   type,
@@ -53,6 +54,7 @@ const exportParameter = ({ id, label, type, defaultValue, help, min, max, minimu
   help,
   ...(min === undefined ? {} : { min }),
   ...(max === undefined ? {} : { max }),
+  ...(step === undefined ? {} : { step }),
   ...(minimumFromField === undefined ? {} : { minimumFromField }),
   ...(minLength === undefined ? {} : { minLength }),
   ...(maxLength === undefined ? {} : { maxLength }),
@@ -82,7 +84,7 @@ export const buildMachineCatalog = (apis: ApiDemo[], base = '/'): MachineCatalog
       keyRequired: false,
       requestLabUrl: `${catalogPath}#/request-lab?api=${encodeURIComponent(api.id)}`,
       agentExecution: getAgentExecutionPolicy(api),
-      ...(api.automatedVerification ? { automatedVerification: getAutomatedVerificationPolicy(api) as Extract<ReturnType<typeof getAutomatedVerificationPolicy>, { mode: 'cadence-limited' }> } : {}),
+      ...(api.automatedVerification ? { automatedVerification: getAutomatedVerificationPolicy(api) } : {}),
       ...(api.usageNote ? { usageNote: api.usageNote } : {}),
       parameters: api.fields.map(exportParameter),
     })),

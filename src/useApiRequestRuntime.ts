@@ -5,10 +5,16 @@ export type RequestErrorKind = 'rate-limit' | 'provider-unavailable' | 'http-err
 
 export const REQUEST_TIMEOUT_MS = 20_000
 
+export type ExecutedRequestContext = {
+  url: string
+  method: string
+  body?: unknown
+}
+
 export type RequestState =
   | { status: 'idle' }
   | { status: 'loading' }
-  | { status: 'success'; data: unknown; httpStatus: number; elapsed: number; size: number; url: string; runId: number }
+  | { status: 'success'; data: unknown; httpStatus: number; elapsed: number; size: number; url: string; executedRequest: ExecutedRequestContext; runId: number }
   | { status: 'error'; message: string; url: string; errorType: RequestErrorKind; httpStatus?: number }
 
 type RequestRuntimeOptions = {
@@ -20,6 +26,7 @@ async function fetchApi(api: ApiDemo, parameters: Record<string, string>, signal
   const url = api.buildUrl(parameters)
   const method = api.method ?? 'GET'
   const body = api.buildBody?.(parameters)
+  const executedRequest: ExecutedRequestContext = { url, method, ...(body === undefined ? {} : { body }) }
   const isForm = api.bodyEncoding === 'form'
   const started = performance.now()
   const requestHeaders = {
@@ -41,15 +48,16 @@ async function fetchApi(api: ApiDemo, parameters: Record<string, string>, signal
     throw error
   }
   let data: unknown
+  const declaredNoContent = text.trim() === '' && api.successNoContent?.statuses.includes(response.status)
   try {
-    data = api.parseResponse ? api.parseResponse(text) : JSON.parse(text) as unknown
+    data = declaredNoContent ? api.successNoContent?.data : api.parseResponse ? api.parseResponse(text) : JSON.parse(text) as unknown
   } catch (cause) {
     const error = new Error('The API returned a successful HTTP response that could not be parsed as expected.', { cause }) as Error & { httpStatus: number; errorType: RequestErrorKind }
     error.httpStatus = response.status
     error.errorType = 'invalid-response'
     throw error
   }
-  return { data, httpStatus: response.status, elapsed: Math.round(performance.now() - started), size: new Blob([text]).size, url }
+  return { data, httpStatus: response.status, elapsed: Math.round(performance.now() - started), size: new Blob([text]).size, url, executedRequest }
 }
 
 const classifyRequestError = (error: unknown, abortReason?: unknown): { message: string; errorType: RequestErrorKind; httpStatus?: number } => {
