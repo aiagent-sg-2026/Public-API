@@ -9,7 +9,7 @@ A reusable Vite + React + TypeScript admin console for demonstrating public APIs
 - A curated catalog of 196 keyless public API demos
 - Generated parameter forms with validation
 - Preview-first Request Lab with one live-response SSOT card for every catalog API
-- Raw JSON remains a secondary developer view; generated fetch code is available where provider policy permits reusable integration code
+- JSON APIs retain Raw JSON as a secondary developer view; non-JSON APIs expose accurately labelled response details, and generated fetch code is available where provider policy permits reusable integration code
 - Copyable JavaScript examples
 - Responsive, keyboard-friendly UI
 - Installable PWA shell with a Pages-base-safe manifest and privacy-safe offline catalog/app-shell reopening; provider responses are never cached by the service worker
@@ -103,7 +103,7 @@ A catalog addition is not complete until its Request Lab SSOT card is defined. A
 
 ## Machine-readable catalog
 
-`api-catalog.json` is generated during development/build from `src/apiCatalog.ts`; do not maintain a second catalog file by hand. A Pages build with base `/Public-API/` publishes it at `/Public-API/api-catalog.json`. It includes deterministic Request Lab paths, parameter metadata, task-oriented search keywords when defined, provider usage constraints, `agentExecution`, and `automatedVerification` policy, but no executable `buildUrl` functions and no synthetic live-health status. `health: "not-included"` is intentional until health telemetry has a durable SSOT. The document head and Agent Tools page both advertise the artifact for ordinary browser agents.
+`api-catalog.json` is generated during development/build from `src/apiCatalog.ts`; do not maintain a second catalog file by hand. A Pages build with base `/Public-API/` publishes it at `/Public-API/api-catalog.json`. It includes deterministic Request Lab paths, an explicit resolved response transport (`json`, `text`, or `image`) for every API, parameter metadata, task-oriented search keywords when defined, provider usage constraints, `agentExecution`, and `automatedVerification` policy, but no executable `buildUrl` functions and no synthetic live-health status. `health: "not-included"` is intentional until health telemetry has a durable SSOT. The document head and Agent Tools page both advertise the artifact for ordinary browser agents.
 
 ## WebMCP
 

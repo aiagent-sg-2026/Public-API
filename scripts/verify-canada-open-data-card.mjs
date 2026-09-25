@@ -25,6 +25,39 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('canada-open-data-search')
+
+  const fieldContract = await b.ev(`(() => {
+    const query = document.querySelector('[name="query"]')
+    const limit = document.querySelector('[name="limit"]')
+    return { queryMinLength: query?.minLength, limitMin: limit?.min, limitMax: limit?.max, limitStep: limit?.step }
+  })()`)
+  assert.deepEqual(fieldContract, { queryMinLength: 1, limitMin: '1', limitMax: '20', limitStep: '1' })
+
+  await setControl(b, 'query', 'climate')
+  await setControl(b, 'limit', '3.5')
+  const fractionalRequestCountBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()` )
+  await sleep(180)
+  const fractionalValidation = await b.ev(`(() => {
+    const field = document.querySelector('[name="limit"]')
+    return { requestState: document.querySelector('.request-lab')?.dataset.requestState, invalid: field?.getAttribute('aria-invalid'), help: document.querySelector('#parameter-limit-help')?.textContent || '' }
+  })()`)
+  assert.equal(b.requestCount - fractionalRequestCountBefore, 0, 'Fractional Canada rows must not trigger a provider request')
+  assert.deepEqual(fractionalValidation, { requestState: 'idle', invalid: 'true', help: 'Results must use increments of 1.' })
+
+  await setControl(b, 'limit', '3')
+  await setControl(b, 'query', '   ')
+  const blankRequestCountBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()` )
+  await sleep(180)
+  const blankValidation = await b.ev(`(() => {
+    const field = document.querySelector('[name="query"]')
+    return { requestState: document.querySelector('.request-lab')?.dataset.requestState, invalid: field?.getAttribute('aria-invalid'), help: document.querySelector('#parameter-query-help')?.textContent || '' }
+  })()`)
+  assert.equal(b.requestCount - blankRequestCountBefore, 0, 'Blank Canada query must not trigger a provider request')
+  assert.deepEqual(blankValidation, { requestState: 'idle', invalid: 'true', help: 'Catalogue search is required.' })
+  report.checks.push({ id: 'canada-open-data-search', case: 'invalid explicit input', queryMinLength: 1, rowStep: 1, fractionalRowsProviderRequests: 0, blankQueryProviderRequests: 0, sharedValidation: 'fail-closed' })
+
   await setControl(b, 'query', 'climate')
   await setControl(b, 'limit', '3')
   const liveRequestCountBefore = b.requestCount

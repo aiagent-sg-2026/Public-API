@@ -2,7 +2,7 @@ import './catalogFamilyCards.css'
 import type { CSSProperties, ReactNode } from 'react'
 import type { ApiDemo } from '../apiCatalog'
 import type { ExecutedRequestContext } from '../useApiRequestRuntime'
-import { cleanText, findPreviewRecords, forecastSymbol, formatNumber, isRecord, numberValue, previewValue, recordArray, recordValue, textArray, textValue, timeLabel } from './previewData'
+import { cleanText, findPreviewRecords, formatNumber, isRecord, previewValue, recordArray, textValue, timeLabel } from './previewData'
 
 import { buildDemoPreview } from './buildDemoPreview'
 import { CardEmpty } from './cardPrimitives'
@@ -19,6 +19,7 @@ export { PubMedSearchPreview } from './PubMedSearchPreview'
 export { ClinicalTrialsSearchPreview } from './ClinicalTrialsSearchPreview'
 export { OpenLibrarySearchPreview } from './OpenLibrarySearchPreview'
 export { OpenFoodFactsPreview } from './OpenFoodFactsPreview'
+export { FreeDictionaryPreview } from './FreeDictionaryPreview'
 export { UkPoliceStreetCrimePreview } from './UkPoliceStreetCrimePreview'
 export { CityBikesNetworkPreview } from './CityBikesNetworkPreview'
 export { WikimediaCommonsSearchPreview } from './WikimediaCommonsSearchPreview'
@@ -47,6 +48,9 @@ export { DogGalleryPreview } from './DogGalleryPreview'
 export { NagerHolidaysPreview } from './NagerHolidaysPreview'
 export { UkBankHolidaysPreview } from './UkBankHolidaysPreview'
 export { HebcalCalendarPreview } from './HebcalCalendarPreview'
+export { NasaEonetEventsPreview } from './NasaEonetEventsPreview'
+export { OpenTriviaPreview } from './OpenTriviaPreview'
+export { JokeApiPreview } from './JokeApiPreview'
 
 const collectImageUrls = (value: unknown, found: string[] = [], depth = 0): string[] => {
   if (depth > 7 || found.length >= 8) return found
@@ -283,62 +287,10 @@ export function SolarCyclePreview({ data, requestUrl, executedRequest }: { data:
 
 export { FederalRegisterPreview } from './FederalRegisterPreview'
 
-export function NaturalEventsPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const events = Array.isArray(root.events) ? root.events.filter(isRecord).slice(0, 6) : []
-  if (!events.length) return <div className="weather-empty"><strong>No active events found</strong><span>Try a broader category or a longer date range.</span></div>
-  return <div className="natural-events-preview"><div className="event-overview"><div><span>NASA EONET monitor</span><strong>{events.length}</strong><b>active natural events</b></div><div className="event-globe" aria-hidden="true">◎<i/><i/><i/></div></div><div className="event-grid">{events.map((event, index) => {
-    const categories = Array.isArray(event.categories) ? event.categories.filter(isRecord) : []
-    const geometry = Array.isArray(event.geometry) ? event.geometry.filter(isRecord) : []
-    const latest = geometry.at(-1)
-    const coordinates = latest && Array.isArray(latest.coordinates) ? latest.coordinates : []
-    const magnitude = numberValue(latest?.magnitudeValue)
-    return <article key={textValue(event.id) ?? index}><span>{forecastSymbol(textValue(categories[0]?.title))}</span><div><small>{textValue(categories[0]?.title) ?? 'Natural event'} · {timeLabel(latest?.date)}</small><h3>{cleanText(event.title) ?? `Event ${index + 1}`}</h3><p>{coordinates.length >= 2 ? `${formatNumber(Number(coordinates[1]), 3)}, ${formatNumber(Number(coordinates[0]), 3)}` : 'Location tracked by EONET'}{magnitude === undefined ? '' : ` · ${formatNumber(magnitude)} ${textValue(latest?.magnitudeUnit) ?? ''}`}</p></div><em>{event.closed ? 'Closed' : 'Open'}</em></article>
-  })}</div></div>
-}
+export { SwissTransitConnectionsPreview } from './SwissTransitConnectionsPreview'
 
-export function TransitBoardPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  if (isRecord(root.departures)) {
-    const departures = recordArray(root.departures.departure).slice(0, 10)
-    const station = cleanText(recordValue(root.stationinfo, 'name') ?? root.station) ?? 'Belgian railway station'
-    if (!departures.length) return <div className="weather-empty"><strong>No train services found</strong><span>The iRail liveboard did not include departures or arrivals.</span></div>
-    return <div className="transit-preview"><div className="transit-summary"><span>Belgian rail liveboard</span><strong>{departures.length}</strong><b>services at {station}</b><small>Live platform and delay information</small></div><div className="transit-routes">{departures.map((departure, index) => {
-      const delay = numberValue(departure.delay) ?? 0
-      const departureEpoch = numberValue(departure.time)
-      const time = departureEpoch === undefined ? undefined : new Date(departureEpoch * 1000).toLocaleTimeString('en-SG', { hour: '2-digit', minute: '2-digit' })
-      const vehicle = cleanText(departure.vehicle) ?? `Service ${index + 1}`
-      return <article key={`${vehicle}-${departure.time}-${index}`} style={{ '--route-color': departure.canceled === '1' ? '#b42318' : delay > 0 ? '#d97706' : '#16805b' } as CSSProperties}><span>{previewValue(departure.platform)}</span><div><small>{delay > 0 ? `Delayed ${Math.round(delay / 60)} min` : 'On schedule'}</small><h3>{cleanText(departure.station) ?? 'Destination unavailable'}</h3><p>{vehicle.replace('BE.NMBS.', '')} · {time ?? previewValue(departure.time)}</p></div><em>{departure.canceled === '1' ? 'Cancelled' : 'Train'}</em></article>
-    })}</div></div>
-  }
-  if (Array.isArray(root.connections)) {
-    const connections = recordArray(root.connections).slice(0, 10)
-    if (!connections.length) return <div className="weather-empty"><strong>No transit connections found</strong><span>The Swiss open-data response did not return connection records.</span></div>
-    return <div className="transit-preview"><div className="transit-summary"><span>Swiss public transport</span><strong>{connections.length}</strong><b>live connections</b><small>Origin, destination and delay details</small></div><div className="transit-routes">{connections.map((connection, index) => {
-      const from = isRecord(connection.from) ? connection.from : {}
-      const to = isRecord(connection.to) ? connection.to : recordArray(connection.to)[0] ?? {}
-      const section = Array.isArray(connection.sections) ? connection.sections.find(isRecord) : undefined
-      const leg = Array.isArray(section?.journeys) ? section.journeys[0] : undefined
-      const journey = isRecord(leg) ? leg : section
-      const delay = numberValue(connection.delay) ?? numberValue(journey?.delay) ?? 0
-      const departure = cleanText(from.departure) ?? cleanText(from.departureTime) ?? cleanText(from.time) ?? '—'
-      const arrival = cleanText(to.arrival) ?? cleanText(to.arrivalTime) ?? cleanText(to.time) ?? '—'
-      const line = cleanText(journey?.name) ?? cleanText(journey?.category) ?? cleanText(from.name) ?? 'Transit connection'
-      const platform = cleanText(from.platform) || cleanText(to.platform) || '—'
-      const duration = cleanText(connection.duration) || cleanText(journey?.duration) || 'scheduled'
-      return <article key={`${departure}-${arrival}-${index}`}><span>{platform}</span><div><small>{delay > 0 ? `Delayed ${delay} min` : 'On schedule'}</small><h3>{cleanText(from.station) ?? cleanText(from.name) ?? 'Unknown origin'} → {cleanText(to.station) ?? cleanText(to.name) ?? 'Unknown destination'}</h3><p>{line} · {duration}</p></div><em>{arrival}</em></article>
-    })}</div></div>
-  }
-  const routes = Array.isArray(root.data) ? root.data.filter(isRecord).slice(0, 10) : []
-  if (!routes.length) return <div className="weather-empty"><strong>No transit routes found</strong><span>The response did not include MBTA route records.</span></div>
-  return <div className="transit-preview"><div className="transit-summary"><span>Boston network</span><strong>{routes.length}</strong><b>routes in this view</b><small>Live MBTA route catalogue</small></div><div className="transit-routes">{routes.map((route, index) => {
-    const attributes = isRecord(route.attributes) ? route.attributes : {}
-    const colorValue = textValue(attributes.color) ?? '165C96'
-    const color = /^[\da-f]{6}$/i.test(colorValue) ? `#${colorValue}` : '#165c96'
-    const destinations = Array.isArray(attributes.direction_destinations) ? attributes.direction_destinations.map(cleanText).filter(Boolean) : []
-    return <article key={textValue(route.id) ?? index} style={{ '--route-color': color } as CSSProperties}><span>{textValue(attributes.short_name) || textValue(route.id)?.slice(0, 2) || 'T'}</span><div><small>{cleanText(attributes.description) ?? 'MBTA service'}</small><h3>{cleanText(attributes.long_name) ?? textValue(route.id) ?? `Route ${index + 1}`}</h3><p>{destinations.length ? destinations.join(' ↔ ') : 'Destination information available'}</p></div><em>Route</em></article>
-  })}</div></div>
-}
+export { IRailLiveboardPreview } from './IRailLiveboardPreview'
+export { MBTARoutesPreview } from './MBTARoutesPreview'
 
 export function TriviaGamePreview({ data }: { data: unknown }) {
   const root = isRecord(data) ? data : {}
@@ -355,40 +307,6 @@ export function TriviaGamePreview({ data }: { data: unknown }) {
     const incorrect = Array.isArray(question.incorrect_answers) ? question.incorrect_answers.map(cleanText).filter((answer): answer is string => Boolean(answer)) : []
     const answers = [correct, ...incorrect]
     return <article key={`${correct}-${index}`}><header><span>{index + 1}</span><div><small>{cleanText(question.category) ?? 'Trivia'} · {cleanText(question.difficulty) ?? 'mixed'}</small><h3>{cleanText(question.question) ?? `Question ${index + 1}`}</h3></div></header><ul>{answers.map((answer, answerIndex) => <li className={answerIndex === 0 ? 'correct' : ''} key={`${answer}-${answerIndex}`}><span>{String.fromCharCode(65 + answerIndex)}</span>{answer}{answerIndex === 0 && <b>Answer</b>}</li>)}</ul></article>
-  })}</div></div>
-}
-
-export function DictionaryEntryPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const legacyEntry = recordArray(data)[0]
-  const modernEntries = recordArray(root.entries)
-  const word = cleanText(legacyEntry?.word) ?? cleanText(root.word) ?? 'Word'
-  const legacyPhonetics = legacyEntry ? recordArray(legacyEntry.phonetics) : []
-  const modernPronunciations = modernEntries.flatMap((entry) => recordArray(entry.pronunciations))
-  const phonetic = cleanText(legacyEntry?.phonetic)
-    ?? cleanText(legacyPhonetics.find((item) => item.text)?.text)
-    ?? cleanText(modernPronunciations.find((item) => item.type === 'ipa')?.text)
-    ?? cleanText(modernPronunciations[0]?.text)
-    ?? 'Pronunciation unavailable'
-  const meanings = legacyEntry
-    ? recordArray(legacyEntry.meanings).map((meaning) => ({
-        partOfSpeech: meaning.partOfSpeech,
-        definitions: recordArray(meaning.definitions),
-        synonyms: textArray(meaning.synonyms),
-      }))
-    : modernEntries.map((entry) => ({
-        partOfSpeech: entry.partOfSpeech,
-        definitions: recordArray(entry.senses).map((sense) => ({
-          definition: sense.definition,
-          example: textArray(sense.examples)[0],
-          synonyms: textArray(sense.synonyms),
-        })),
-        synonyms: [...textArray(entry.synonyms), ...recordArray(entry.senses).flatMap((sense) => textArray(sense.synonyms))],
-      }))
-  if (!meanings.length) return <div className="weather-empty"><strong>Dictionary entry unavailable</strong><span>No word entry was returned.</span></div>
-  return <div className="dictionary-preview"><div className="dictionary-hero"><div><span>English dictionary</span><strong>{word}</strong><b>{phonetic}</b></div><span aria-hidden="true">Aa</span></div><div className="dictionary-meanings">{meanings.slice(0, 8).map((meaning, index) => {
-    const definitions = recordArray(meaning.definitions)
-    return <section key={`${meaning.partOfSpeech}-${index}`}><header><span>{index + 1}</span><h3>{cleanText(meaning.partOfSpeech) ?? 'Meaning'}</h3></header><ol>{definitions.slice(0, 3).map((definition, definitionIndex) => <li key={definitionIndex}><p>{cleanText(definition.definition) ?? 'Definition unavailable'}</p>{cleanText(definition.example) && <blockquote>“{cleanText(definition.example)}”</blockquote>}</li>)}</ol>{meaning.synonyms.length ? <footer><b>Synonyms</b>{[...new Set(meaning.synonyms)].slice(0, 6).map((synonym) => <span key={synonym}>{synonym}</span>)}</footer> : null}</section>
   })}</div></div>
 }
 

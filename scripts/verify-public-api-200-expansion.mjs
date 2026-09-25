@@ -54,6 +54,25 @@ const runLive = async (id, verify) => {
   }
 }
 
+const verifySeasonalHumanForecastDaysConstraint = async () => {
+  const b = await browser(`${root}/dist`)
+  try {
+    await b.nav('open-meteo-seasonal')
+    const inputContract = await b.ev(`(()=>{const input=document.querySelector('input[name="forecastDays"]');return {type:input?.type||'',value:input?.value||'',min:input?.min||'',max:input?.max||'',step:input?.step||'',describedBy:input?.getAttribute('aria-describedby')||''}})()`)
+    assert.deepEqual(inputContract, { type: 'number', value: '42', min: '1', max: '46', step: '1', describedBy: 'parameter-forecastDays-help' })
+    const beforeInvalidSubmission = b.requestCount
+    await b.ev(`(()=>{const input=document.querySelector('input[name="forecastDays"]'),setter=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;setter.call(input,'42.5');input.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'42.5'}));document.querySelector('form.parameter-card').requestSubmit()})()`)
+    await b.wait(`document.querySelector('input[name="forecastDays"]')?.getAttribute('aria-invalid') === 'true'`)
+    await sleep(150)
+    assert.equal(b.requestCount, beforeInvalidSubmission, 'Fractional human Open-Meteo Seasonal forecast days reached a provider request')
+    assert.equal(await b.ev(`document.querySelector('.request-lab')?.dataset.requestState`), 'idle')
+    assert.deepEqual(b.errors, [], `open-meteo-seasonal invalid input: browser errors ${b.errors.join(' | ')}`)
+    report.checks.push({ id: 'open-meteo-seasonal', case: 'human fractional forecast-day pre-network validation', fieldContract: inputContract, rejectedValue: '42.5', providerRequests: 0, stateAfterBlock: 'idle' })
+  } finally {
+    await b.close()
+  }
+}
+
 const verifyNhtsaHumanVehicleIdConstraint = async () => {
   const b = await browser(`${root}/dist`)
   try {
@@ -75,16 +94,25 @@ const verifyNhtsaHumanVehicleIdConstraint = async () => {
 }
 
 try {
+  if (shouldRun('open-meteo-seasonal')) await verifySeasonalHumanForecastDaysConstraint()
   if (shouldRun('open-meteo-seasonal')) await runLive('open-meteo-seasonal', async (b, data) => {
     assert(data && typeof data === 'object' && !Array.isArray(data))
     assert(data.weekly && Array.isArray(data.weekly.time) && data.weekly.time.length > 0)
     const dom = await b.ev(`(()=>{const s=document.querySelector('.demo-preview'),c=s?.querySelector('[data-domain-card="seasonal-outlook"]');return {layout:s?.dataset.previewLayout||'',state:c?.dataset.resultState||'',bound:c?.dataset.requestBound||'',forecastDays:Number(c?.dataset.requestForecastDays||0),provider:Number(c?.dataset.providerPeriodCount||0),valid:Number(c?.dataset.validPeriodCount||0),invalid:Number(c?.dataset.invalidPeriodCount||0),units:c?.dataset.unitContract||'',arrayLengths:c?.dataset.arrayLengthContract||'',cadence:c?.dataset.weeklyCadenceContract||'',horizon:c?.dataset.horizonCountContract||'',minBuckets:Number(c?.dataset.minimumExpectedBuckets||0),maxBuckets:Number(c?.dataset.maximumExpectedBuckets||0),timezone:c?.dataset.timezone||'',text:c?.innerText||''}})()`)
-    assert.equal(dom.layout, 'seasonal-outlook'); assert.equal(dom.state, 'ready'); assert.equal(dom.bound, 'true'); assert.equal(dom.forecastDays, 42)
-    assert.equal(dom.provider, data.weekly.time.length); assert.equal(dom.valid, data.weekly.time.length); assert.equal(dom.invalid, 0)
+    const measurementKeys = ['temperature_2m_mean', 'temperature_2m_anomaly', 'precipitation_mean', 'precipitation_anomaly']
+    const invalidIndexes = data.weekly.time.map((time, index) => {
+      const valid = typeof time === 'string' && measurementKeys.every((key) => typeof data.weekly[key]?.[index] === 'number' && Number.isFinite(data.weekly[key][index]))
+      return valid ? -1 : index
+    }).filter((index) => index >= 0)
+    assert(invalidIndexes.every((index) => index === 0 || index === data.weekly.time.length - 1), `Open-Meteo Seasonal returned an incomplete interior weekly bucket: ${invalidIndexes.join(',')}`)
+    const expectedState = invalidIndexes.length ? 'partial' : 'ready'
+    const firstValidIndex = data.weekly.time.findIndex((_, index) => !invalidIndexes.includes(index))
+    assert.equal(dom.layout, 'seasonal-outlook'); assert.equal(dom.state, expectedState); assert.equal(dom.bound, 'true'); assert.equal(dom.forecastDays, 42)
+    assert.equal(dom.provider, data.weekly.time.length); assert.equal(dom.valid, data.weekly.time.length - invalidIndexes.length); assert.equal(dom.invalid, invalidIndexes.length)
     assert.equal(dom.units, 'true'); assert.equal(dom.arrayLengths, 'true'); assert.equal(dom.cadence, 'true'); assert.equal(dom.horizon, 'true'); assert.equal(dom.minBuckets, 6); assert.equal(dom.maxBuckets, 7); assert.equal(dom.timezone, 'Asia/Singapore')
     assert(dom.provider >= dom.minBuckets && dom.provider <= dom.maxBuckets)
-    assert(dom.text.includes(data.weekly.time[0])); assert(dom.text.includes('42-day horizon'))
-    return { case: 'live 42-day EC46 horizon with calendar-aligned weekly buckets', state: dom.state, requestBound: dom.bound, forecastDays: dom.forecastDays, calendarBuckets: dom.provider, timezone: dom.timezone, liveProviderRequests: b.requestCount, browserCorsReadable: true }
+    assert(firstValidIndex >= 0); assert(dom.text.includes(data.weekly.time[firstValidIndex])); assert(dom.text.includes('42-day horizon'))
+    return { case: 'live 42-day EC46 horizon with calendar-aligned weekly buckets', state: dom.state, requestBound: dom.bound, forecastDays: dom.forecastDays, calendarBuckets: dom.provider, validBuckets: dom.valid, boundaryIncompleteBuckets: invalidIndexes.length, timezone: dom.timezone, liveProviderRequests: b.requestCount, browserCorsReadable: true }
   })
 
   if (shouldRun('nhtsa-safety-ratings')) await verifyNhtsaHumanVehicleIdConstraint()

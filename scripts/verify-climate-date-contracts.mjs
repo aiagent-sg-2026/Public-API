@@ -200,6 +200,14 @@ try {
     endType: document.querySelector('input[name="endDate"]')?.type,
   })`)
   assert.deepEqual(nasaInputs, { startType: 'date', endType: 'date' })
+  await setInput(b, 'parameters', '')
+  const beforeInvalidNasaParameters = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeInvalidNasaParameters, 'Blank NASA POWER parameters reached provider network')
+  assert.equal(await b.ev(`document.querySelector('input[name="parameters"]')?.getAttribute('aria-invalid')`), 'true')
+  assert.equal(await b.ev(`document.querySelector('.request-lab')?.dataset.requestState`), 'idle')
+  await setInput(b, 'parameters', 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN')
   await setInput(b, 'startDate', '2026-08-03')
   await setInput(b, 'endDate', '2026-08-07')
   const nasaEndpoint = await b.ev(`document.querySelector('.endpoint-box code')?.textContent || ''`)

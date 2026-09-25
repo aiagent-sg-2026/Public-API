@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const report = {
   origin: 'https://yapweijun1996.github.io',
@@ -11,6 +11,16 @@ const report = {
 }
 
 const unnamed = (nodes) => nodes.filter((node) => !node.ignored && ['button', 'combobox', 'textbox', 'spinbutton', 'searchbox', 'tab', 'radio', 'link'].includes(node.role?.value) && !(node.name?.value || '').trim())
+const setInput = async (b, name, value) => {
+  await b.ev(`(() => {
+    const input = document.querySelector('input[name=${JSON.stringify(name)}]')
+    if (!input) throw new Error('Missing input ' + ${JSON.stringify(name)})
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, ${JSON.stringify(value)})
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })()`)
+  await sleep(80)
+}
 const semanticDom = (b) => b.ev(`(() => {
   const shell=document.querySelector('.demo-preview');
   const card=shell?.querySelector('[data-domain-card="bank-of-canada-series"]');
@@ -67,6 +77,18 @@ try {
   assert.equal(contract.series, 'FXUSDCAD')
   const nativeSeriesContract = await active.ev(`(() => { const input=document.querySelector('input[name="series"]'); return { minLength:input?.minLength, pattern:input?.pattern, value:input?.value }; })()`)
   assert.deepEqual(nativeSeriesContract, { minLength: 1, pattern: '[A-Za-z0-9_.-]+', value: 'FXUSDCAD' })
+
+  await setInput(active, 'series', 'FXUSDCAD,FXEURCAD')
+  const requestsBeforeInvalidSeries = active.requestCount
+  await active.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await active.wait(`document.querySelector('input[name="series"]')?.getAttribute('aria-invalid') === 'true'`)
+  const invalidSeries = await active.ev(`(() => ({ state: document.querySelector('.request-lab')?.dataset.requestState || '', help: document.querySelector('#parameter-series-help')?.textContent || '' }))()`)
+  assert.equal(active.requestCount, requestsBeforeInvalidSeries, 'Invalid multi-series product input reached the provider')
+  assert.equal(invalidSeries.state, 'idle')
+  assert.match(invalidSeries.help, /one Bank of Canada series code/i)
+
+  await setInput(active, 'series', 'FXUSDCAD')
+  report.checks.push({ case: 'invalid explicit multi-series product input', providerRequests: 0, sharedValidation: 'fail-closed' })
 
   const requestsBeforeLiveRun = active.requestCount
   const result = await active.run()

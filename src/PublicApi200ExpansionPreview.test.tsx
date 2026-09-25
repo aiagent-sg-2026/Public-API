@@ -71,6 +71,26 @@ describe('Public-API 195→200 expansion semantic previews', () => {
     expect(container.firstElementChild).toHaveAttribute('data-result-state', 'partial')
   })
 
+  it('keeps an incomplete calendar-boundary seasonal bucket visible as partial evidence without fabricating measurements', () => {
+    const boundaryPartial = {
+      ...seasonal,
+      weekly: {
+        ...seasonal.weekly,
+        temperature_2m_mean: [...seasonal.weekly.temperature_2m_mean.slice(0, -1), null],
+        temperature_2m_anomaly: [...seasonal.weekly.temperature_2m_anomaly.slice(0, -1), null],
+        precipitation_mean: [...seasonal.weekly.precipitation_mean.slice(0, -1), null],
+        precipitation_anomaly: [...seasonal.weekly.precipitation_anomaly.slice(0, -1), null],
+      },
+    }
+    const { container } = render(<OpenMeteoSeasonalPreview data={boundaryPartial} requestUrl={seasonalUrl} executedRequest={seasonalGet}/>)
+    expect(container.firstElementChild).toHaveAttribute('data-result-state', 'partial')
+    expect(container.firstElementChild).toHaveAttribute('data-provider-period-count', '7')
+    expect(container.firstElementChild).toHaveAttribute('data-valid-period-count', '6')
+    expect(container.firstElementChild).toHaveAttribute('data-invalid-period-count', '1')
+    expect(container).not.toHaveTextContent('Week of 2026-10-19')
+    expect(container).toHaveTextContent('Only validated seasonal buckets are shown')
+  })
+
   it('fails closed when the displayed seasonal URL disagrees with the actual executed transport', () => {
     const invalidRequests = [
       { url: seasonalUrl, method: 'POST' },

@@ -395,6 +395,30 @@ describe('response preview architecture', () => {
     expect(previewProfilesSource).toContain("['dblp-search', 'dblp-publications'")
   })
 
+  it('keeps Swiss transit on its dedicated request-bound connection adapter', () => {
+    expect(catalogFamilyBundleSource).toContain("export { SwissTransitConnectionsPreview } from './SwissTransitConnectionsPreview'")
+    expect(responsePreviewSource).toContain("const SwissTransitConnectionsPreview = familyPreview('SwissTransitConnectionsPreview')")
+    expect(responsePreviewSource).toContain("'swiss-transit-connections': defineApiPreview('swiss-transit-connections', ({ api, data, requestUrl, executedRequest }) => <SwissTransitConnectionsPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>)")
+    expect(responsePreviewSource).not.toContain("'swiss-transit-connections': defineApiPreview('swiss-transit-connections', ({ data }) => <TransitBoardPreview")
+    expect(catalogFamilyBundleSource).not.toContain('Swiss public transport')
+  })
+
+  it('keeps iRail on its dedicated request-bound liveboard adapter', () => {
+    expect(catalogFamilyBundleSource).toContain("export { IRailLiveboardPreview } from './IRailLiveboardPreview'")
+    expect(responsePreviewSource).toContain("const IRailLiveboardPreview = familyPreview('IRailLiveboardPreview')")
+    expect(responsePreviewSource).toContain("'irail-liveboard': defineApiPreview('irail-liveboard', ({ api, data, requestUrl, executedRequest }) => <IRailLiveboardPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>)")
+    expect(responsePreviewSource).not.toContain("'irail-liveboard': defineApiPreview('irail-liveboard', ({ data }) => <TransitBoardPreview")
+    expect(catalogFamilyBundleSource).not.toContain('Belgian rail liveboard')
+  })
+
+  it('keeps PoetryDB on a dedicated request-bound author/count reading-room adapter', () => {
+    expect(specializedCatalogBundleSource).toContain("export { PoetryDbPreview } from './PoetryDbPreview'")
+    expect(responsePreviewSource).toContain("const PoetryDbPreview = specializedPreview('PoetryDbPreview')")
+    expect(responsePreviewSource).toContain("'poetrydb-poems': defineApiPreview('poetrydb-poems', ({ api, data, requestUrl, executedRequest }) => <PoetryDbPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>)")
+    expect(responsePreviewSource).not.toContain("'poetrydb-poems': defineApiPreview('poetrydb-poems', ({ data }) => <PoetryReaderPreview data={data}/>)")
+    expect(previewProfilesSource).toContain("['poetrydb-poems', 'poetry-reading-room', 'Request-bound PoetryDB reading room']")
+  })
+
   it('keeps family-specific preview CSS behind the matching async bundle', () => {
     expect(responsePreviewSource).toContain("import './previews/domainCards.css'")
     expect(catalogFamilyBundleSource).toContain("import './catalogFamilyCards.css'")

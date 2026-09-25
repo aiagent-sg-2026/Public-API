@@ -83,7 +83,9 @@ export type PreviewLayout =
   | 'solar-cycle'
   | 'natural-events'
   | 'transit-board'
+  | 'swiss-transit-connections'
   | 'trivia-game'
+  | 'joke-stage'
   | 'rest-post'
   | 'community-articles'
   | 'repository-list'
@@ -116,6 +118,7 @@ export type PreviewLayout =
   | 'global-security-advisories'
   | 'security-center'
   | 'research-library'
+  | 'poetry-reading-room'
   | 'book-search'
   | 'dblp-publications'
   | 'organization-directory'
@@ -258,7 +261,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['open-meteo-elevation', 'terrain-elevation', 'Terrain elevation lookup'],
   ['zippopotam-postcode', 'postcode-geolocation', 'Request-bound postcode geolocation'],
   ['irail-liveboard', 'transit-board', 'Belgian railway live departure board'],
-  ['swiss-transit-connections', 'transit-board', 'Swiss transit connection lookup'],
+  ['swiss-transit-connections', 'swiss-transit-connections', 'Request-bound Swiss transit connection evidence'],
   ['spaceflight-news', 'spaceflight-news', 'Request-bound spaceflight publisher articles'],
   ['launch-library-upcoming', 'launch-schedule', 'Upcoming mission launch countdown'],
   ['wiktionary-entry', 'dictionary-entry', 'Wiktionary structured language entry'],
@@ -267,7 +270,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['openverse-search', 'licensed-media-search', 'Openverse licensed-media search'],
   ['apple-itunes-search', 'itunes-media-search', 'Request-bound Apple media catalog'],
   ['packagist-search', 'composer-package-search', 'Packagist package search'],
-  ['jokeapi-safe', 'trivia-game', 'Safe interactive joke stage'],
+  ['jokeapi-safe', 'joke-stage', 'Exact-request safe JokeAPI stage'],
   ['hn-search-algolia', 'hn-search', 'Hacker News story and comment search'],
   ['open-meteo-seasonal', 'seasonal-outlook', 'ECMWF seasonal anomaly outlook'],
   ['nhtsa-safety-ratings', 'vehicle-safety-rating', 'NHTSA vehicle crash-test safety rating'],
@@ -278,7 +281,7 @@ const profileEntries: Array<[id: string, layout: PreviewLayout, label: string]> 
   ['bank-of-canada-valet', 'central-bank-series', 'Request-bound Bank of Canada time series'],
   ['nasa-power-climate', 'climate-series', 'NASA POWER climate series'],
   ['brasilapi-postcode', 'location-map', 'Brazilian postcode location profile'],
-  ['poetrydb-poems', 'research-library', 'Public-domain poetry reading room'],
+  ['poetrydb-poems', 'poetry-reading-room', 'Request-bound PoetryDB reading room'],
   ['coingecko-keyless-market', 'market-chart', 'Keyless cryptocurrency market snapshot'],
   ['swapi-people', 'character-dossier', 'Star Wars character dossier'],
   ['google-dns-doh', 'dns-records', 'DNS resolution and answer records'],

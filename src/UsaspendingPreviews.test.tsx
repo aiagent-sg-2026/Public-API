@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom/vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
-import { apiCatalog } from './apiCatalog'
+import { apiCatalog, validateParameters } from './apiCatalog'
 import { ResponseDemoPreview } from './responsePreview'
 
 const agencyApi = apiCatalog.find((candidate) => candidate.id === 'fiscal-data-treasury')
@@ -19,6 +19,15 @@ const awardRequest = (fiscalYear: number, limit: number) => {
 
 describe('USAspending semantic previews', () => {
   afterEach(cleanup)
+
+  it('keeps fiscal year and award limit as integer SSOT inputs without silent request coercion', () => {
+    expect(awardsApi.fields.find((field) => field.id === 'fiscalYear')).toMatchObject({ type: 'number', min: 2008, step: 1 })
+    expect(awardsApi.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+    expect(validateParameters(awardsApi, { fiscalYear: '2025.5', limit: '8' })).toHaveProperty('fiscalYear')
+    expect(validateParameters(awardsApi, { fiscalYear: '2025', limit: '8.5' })).toHaveProperty('limit')
+    expect(() => awardsApi.buildBody?.({ fiscalYear: '2025.5', limit: '8' })).toThrow(/fiscal year/i)
+    expect(() => awardsApi.buildBody?.({ fiscalYear: '2025', limit: '8.5' })).toThrow(/limit/i)
+  })
 
   it('renders the agency endpoint as an overview without inventing spending totals', () => {
     render(<ResponseDemoPreview api={agencyApi} requestUrl={agencyApi.buildUrl({})} executedRequest={{ url: agencyApi.buildUrl({}), method: 'GET' }} data={{

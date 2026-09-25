@@ -84,7 +84,7 @@ Every meaningful UI change should be reviewed for both user classes.
 ### Human / developer
 
 - clear information hierarchy;
-- semantic result before Raw JSON;
+- semantic result before source-appropriate response details (Raw JSON for JSON APIs);
 - responsive desktop/mobile behavior;
 - keyboard operation;
 - understandable loading/error states;
@@ -116,7 +116,7 @@ Publication hygiene must cover the complete unpublished local candidate without 
 
 Do not call a provider healthy based only on server-side `curl`. Browser-origin behavior is the admission criterion for this static GitHub Pages product.
 For search/filter demos, HTTP success alone is also insufficient: verify that the documented provider parameter is actually recognized and that the returned result semantics match the requested input. Prefer provider-echoed request metadata when available; an ignored query parameter that still returns HTTP 200 is a request-definition regression, not a healthy search.
-When provider documentation defines a successful no-result status such as HTTP 204, test both a live/contract-backed no-result path and a malformed HTTP-success body. The no-result status may map to semantic `empty` only through an API-specific SSOT declaration; an undeclared empty 2xx body must continue to fail closed as an invalid response.
+When provider documentation defines a successful no-result status such as HTTP 204, test both a live/contract-backed no-result path and a malformed HTTP-success body. The no-result status may map to semantic `empty` only through an API-specific SSOT declaration; an undeclared empty 2xx body must continue to fail closed as an invalid response. For intentionally non-JSON transports, verify the provider's documented/live media type and encode the admitted media types in SSOT; regression coverage should prove a mismatched HTTP-2xx `Content-Type` cannot be parsed into a plausible result.
 For date-sensitive demos, also verify the provider's documented date format and compare the provider-echoed Gregorian/reporting date with the requested date when the response exposes it. HTTP 200 with a differently interpreted day or year is a request-definition regression, even if the returned measurements look plausible.
 
 For WebMCP behavior, prefer native `document.modelContext` browser verification when the test browser exposes the WebMCP testing surface. Unit-level registration mocks remain useful, but they cannot prove imperative tool lifecycle behavior. In framework integrations, a normal UI state change must not abort and re-register the tool set while an invocation is in flight.

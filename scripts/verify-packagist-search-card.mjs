@@ -21,7 +21,37 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('packagist-search')
+
+  const fieldContract = await b.ev(`(() => {
+    const query = document.querySelector('[name="query"]')
+    const limit = document.querySelector('[name="limit"]')
+    return { queryMinLength: query?.minLength, limitMin: limit?.min, limitMax: limit?.max, limitStep: limit?.step }
+  })()` )
+  assert.deepEqual(fieldContract, { queryMinLength: 1, limitMin: '1', limitMax: '20', limitStep: '1' })
+
+  await setControl(b, 'query', '   ')
+  await setControl(b, 'limit', '8')
+  const blankBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()` )
+  await sleep(180)
+  const blankValidation = await b.ev(`(() => { const field=document.querySelector('[name="query"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-query-help')?.textContent||''} })()` )
+  assert.equal(b.requestCount - blankBefore, 0, 'Blank Packagist package search must not trigger a provider request')
+  assert.equal(blankValidation.state, 'idle')
+  assert.equal(blankValidation.invalid, 'true')
+  assert.match(blankValidation.help, /Package search is required\./)
+
   await setControl(b, 'query', 'monolog')
+  await setControl(b, 'limit', '8.5')
+  const fractionalBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()` )
+  await sleep(180)
+  const fractionalValidation = await b.ev(`(() => { const field=document.querySelector('[name="limit"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-limit-help')?.textContent||''} })()` )
+  assert.equal(b.requestCount - fractionalBefore, 0, 'Fractional Packagist package count must not trigger a provider request')
+  assert.equal(fractionalValidation.state, 'idle')
+  assert.equal(fractionalValidation.invalid, 'true')
+  assert.match(fractionalValidation.help, /Packages must use increments of 1\./)
+  report.checks.push({case:'invalid explicit input',queryMinLength:1,limitStep:1,blankQueryProviderRequests:0,fractionalLimitProviderRequests:0,sharedValidation:'fail-closed'})
+
   await setControl(b, 'limit', '8')
   const run = await b.run()
   assert.equal(run.ok, true, run.error)

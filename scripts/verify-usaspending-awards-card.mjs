@@ -22,6 +22,27 @@ try {
   try {
     await live.nav('usaspending')
     const selectedFiscalYear = Number(await live.ev(`document.querySelector('[name="fiscalYear"]')?.value`))
+    const integerContract = await live.ev(`(() => ({
+      fiscalYearStep: document.querySelector('[name="fiscalYear"]')?.getAttribute('step') || '',
+      limitStep: document.querySelector('[name="limit"]')?.getAttribute('step') || '',
+    }))()` )
+    assert.deepEqual(integerContract, { fiscalYearStep: '1', limitStep: '1' })
+    const beforeFractionalFiscalYear = live.requestCount
+    await setControl(live, 'fiscalYear', '2025.5')
+    const fiscalYearValidity = await live.ev(`(() => { const input=document.querySelector('[name="fiscalYear"]'); return { valid:input.checkValidity(), stepMismatch:input.validity.stepMismatch }; })()` )
+    assert.deepEqual(fiscalYearValidity, { valid:false, stepMismatch:true })
+    live.ev(`document.querySelector('form.parameter-card').requestSubmit()` )
+    await sleep(120)
+    assert.equal(live.requestCount, beforeFractionalFiscalYear, 'Fractional USAspending fiscal year reached a provider request')
+    await setControl(live, 'fiscalYear', String(selectedFiscalYear))
+    const beforeFractionalLimit = live.requestCount
+    await setControl(live, 'limit', '3.5')
+    const limitValidity = await live.ev(`(() => { const input=document.querySelector('[name="limit"]'); return { valid:input.checkValidity(), stepMismatch:input.validity.stepMismatch }; })()` )
+    assert.deepEqual(limitValidity, { valid:false, stepMismatch:true })
+    live.ev(`document.querySelector('form.parameter-card').requestSubmit()` )
+    await sleep(120)
+    assert.equal(live.requestCount, beforeFractionalLimit, 'Fractional USAspending limit reached a provider request')
+    report.checks.push({ id:'usaspending', case:'integer SSOT validation', fiscalYearStep:1, limitStep:1, fractionalFiscalYearRejected:true, fractionalLimitRejected:true, providerRequests:0 })
     await setControl(live, 'limit', '3')
     const result = await live.run()
     assert.equal(result.ok, true, result.error)

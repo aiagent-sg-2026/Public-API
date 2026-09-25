@@ -1,17 +1,25 @@
 import './specializedCatalogCards.css'
-import type { CSSProperties } from 'react'
-import type { ApiDemo } from '../apiCatalog'
-import type { ExecutedRequestContext } from '../useApiRequestRuntime'
-import { Sparkline } from './ChartPrimitives'
+import { getApiResponseType, type ApiDemo } from '../apiCatalog'
+import type { ExecutedRequestContext, ResponseMediaContext } from '../useApiRequestRuntime'
 import { SemanticCards, type SemanticCard } from './SemanticCards'
 import { CardEmpty } from './cardPrimitives'
-import { cleanText, compactNumber, dateParts, formatNumber, isRecord, numberValue, previewLabel, previewValue, recordArray, recordValue, textArray } from './previewData'
+import { cleanText, compactNumber, dateParts, formatNumber, isRecord, numberValue, previewValue, recordArray, textArray } from './previewData'
 import { nonNegativeSafeInteger, optionalTrimmedText, positiveSafeInteger, trimmedText } from './semanticValidation'
 
 export { MarineForecastPreview } from './OpenMeteoMarinePreview'
 export { MetMuseumSearchPreview } from './MetMuseumSearchPreview'
 export { MetMuseumObjectPreview } from './MetMuseumObjectPreview'
 export { LaunchSchedulePreview } from './LaunchLibraryUpcomingPreview'
+export { OpenF1SessionsPreview } from './OpenF1SessionsPreview'
+export { NobelPrizePreview } from './NobelPrizePreview'
+export { PoetryDbPreview } from './PoetryDbPreview'
+export { WiktionaryEntryPreview } from './WiktionaryEntryPreview'
+export { LichessPlayerRatingsPreview } from './LichessPlayerRatingsPreview'
+export { LichessLeaderboardPreview } from './LichessLeaderboardPreview'
+export { BrazilPostcodePreview } from './BrazilPostcodePreview'
+export { GbifTaxonomyPreview } from './GbifTaxonomyPreview'
+export { DndSpellPreview } from './DndSpellPreview'
+export { MalaysiaFuelPricePreview } from './MalaysiaFuelPricePreview'
 
 type CountryRequestIdentity = { code: string; valid: true } | { valid: false }
 type CountryRequestTransport = { request?: CountryRequestIdentity; valid: boolean; bound: boolean }
@@ -135,203 +143,6 @@ export function CountryPreview({ data, api, requestUrl, executedRequest }: { dat
   </div>
 }
 
-export function FuelPricePreview({ data }: { data: unknown }) {
-  const levels = recordArray(data).filter((row) => row.series_type === 'level')
-  const latest = levels[0] ?? {}
-  const previous = levels[1] ?? {}
-  const fuels = [
-    { key: 'ron95', label: 'RON95', note: 'Market price' },
-    { key: 'ron97', label: 'RON97', note: 'Premium petrol' },
-    { key: 'diesel', label: 'Diesel', note: 'Peninsular Malaysia' },
-    { key: 'ron95_budi95', label: 'BUDI95', note: 'Targeted price' },
-  ]
-  const ron95History = levels.map((row) => numberValue(row.ron95)).filter((value): value is number => value !== undefined).reverse()
-  if (!levels.length) return <div className="weather-empty"><strong>Fuel-price history unavailable</strong><span>No weekly price-level rows were returned.</span></div>
-  return <div className="fuel-preview">
-    <header className="fuel-hero"><div><small>Official weekly price · Malaysia</small><strong>{dateParts(latest.date).full || previewValue(latest.date)}</strong><span>Ringgit Malaysia per litre</span></div><div className="fuel-pump" aria-hidden="true"><i/><b>MY</b></div></header>
-    <div className="fuel-price-grid">{fuels.map((fuel) => {
-      const value = numberValue(latest[fuel.key])
-      const previousValue = numberValue(previous[fuel.key])
-      const change = value !== undefined && previousValue !== undefined ? value - previousValue : undefined
-      return <article key={fuel.key}><small>{fuel.label}</small><strong>{value === undefined ? '—' : `RM ${formatNumber(value, 2)}`}</strong><span className={change !== undefined && change < 0 ? 'down' : ''}>{change === undefined || change === 0 ? 'No weekly change' : `${change > 0 ? '↑' : '↓'} RM ${formatNumber(Math.abs(change), 2)}`}</span><em>{fuel.note}</em></article>
-    })}</div>
-    <div className="fuel-history"><div><small>RON95 history</small><strong>{ron95History.length} observations</strong></div><Sparkline values={ron95History} label="RON95 price history sparkline"/></div>
-  </div>
-}
-
-export function NobelPrizePreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const prizes = recordArray(root.nobelPrizes)
-  if (!prizes.length) return <div className="weather-empty"><strong>Nobel Prize records unavailable</strong><span>No prize records were returned.</span></div>
-  const first = prizes[0]
-  const firstCategory = isRecord(first.category) ? cleanText(first.category.en) : undefined
-  const laureateCount = prizes.reduce((total, prize) => total + recordArray(prize.laureates).length, 0)
-  return <div className="nobel-preview">
-    <div className="nobel-summary"><span aria-hidden="true">N</span><div><small>Latest {firstCategory ?? 'Nobel'} awards</small><strong>{prizes.length} prize years</strong><p>{laureateCount} laureates represented in this response</p></div><b>{previewValue(first.awardYear)}</b></div>
-    <ol className="nobel-timeline">{prizes.slice(0, 6).map((prize, index) => {
-      const category = isRecord(prize.category) ? cleanText(prize.category.en) : 'Nobel Prize'
-      const laureates = recordArray(prize.laureates)
-      return <li key={`${prize.awardYear}-${index}`}><time>{previewValue(prize.awardYear)}</time><i/><article><header><small>{category}</small><b>{compactNumber(numberValue(prize.prizeAmount) ?? 0)} SEK</b></header><h3>{laureates.map((laureate) => cleanText(recordValue(laureate.knownName, 'en') ?? recordValue(laureate.fullName, 'en'))).filter(Boolean).join(' · ') || 'Prize organization'}</h3><p>{cleanText(recordValue(laureates[0]?.motivation, 'en')) ?? 'Official prize record and laureate information.'}</p></article></li>
-    })}</ol>
-  </div>
-}
-
-export function LichessLeaderboardPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const cards: SemanticCard[] = recordArray(root.users).map((user, index) => {
-    const perfs = isRecord(user.perfs) ? user.perfs : {}
-    const perf = Object.values(perfs).find(isRecord) ?? {}
-    return {
-      title: cleanText(user.username) ?? `Player ${index + 1}`,
-      eyebrow: cleanText(user.title) ?? 'Lichess player',
-      badge: `Rating ${previewValue(perf.rating)}`,
-      metrics: [
-        { label: 'Rank', value: String(index + 1) },
-        { label: 'Progress', value: previewValue(perf.progress) },
-        { label: 'Patron', value: user.patron ? 'Yes' : 'No' },
-      ],
-    }
-  })
-  return <SemanticCards cards={cards} emptyTitle="Lichess leaderboard unavailable"/>
-}
-
-export function ChessRatingsPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const modes = [
-    { key: 'chess_blitz', label: 'Blitz', symbol: '⚡' },
-    { key: 'chess_bullet', label: 'Bullet', symbol: '●' },
-    { key: 'chess_rapid', label: 'Rapid', symbol: '◷' },
-    { key: 'chess_daily', label: 'Daily', symbol: '□' },
-  ].map((mode) => {
-    const stats = isRecord(root[mode.key]) ? root[mode.key] as Record<string, unknown> : {}
-    const last = isRecord(stats.last) ? stats.last : {}
-    const best = isRecord(stats.best) ? stats.best : {}
-    const record = isRecord(stats.record) ? stats.record : {}
-    return { ...mode, rating: numberValue(last.rating), best: numberValue(best.rating), wins: numberValue(record.win) ?? 0, losses: numberValue(record.loss) ?? 0, draws: numberValue(record.draw) ?? 0 }
-  }).filter((mode) => mode.rating !== undefined)
-  if (!modes.length) return <div className="weather-empty"><strong>Chess ratings unavailable</strong><span>The player has no public rating records.</span></div>
-  const leader = [...modes].sort((a, b) => (b.rating ?? 0) - (a.rating ?? 0))[0]
-  const totalGames = modes.reduce((total, mode) => total + mode.wins + mode.losses + mode.draws, 0)
-  return <div className="chess-preview">
-    <header className="chess-hero"><div className="chess-board" aria-hidden="true">♞</div><div><small>Public competitive profile</small><strong>{formatNumber(leader.rating ?? 0, 0)}</strong><span>Highest current rating · {leader.label}</span></div><div><small>FIDE</small><b>{previewValue(root.fide)}</b><span>{compactNumber(totalGames)} recorded games</span></div></header>
-    <div className="chess-rating-grid">{modes.map((mode) => {
-      const games = mode.wins + mode.losses + mode.draws
-      const winRate = games ? (mode.wins / games) * 100 : 0
-      return <article key={mode.key}><header><span>{mode.symbol}</span><div><small>{mode.label}</small><strong>{formatNumber(mode.rating ?? 0, 0)}</strong></div><b>Best {formatNumber(mode.best ?? mode.rating ?? 0, 0)}</b></header><div className="chess-score"><i style={{ '--win-rate': `${winRate}%` } as CSSProperties}/></div><dl><div><dt>Win</dt><dd>{compactNumber(mode.wins)}</dd></div><div><dt>Draw</dt><dd>{compactNumber(mode.draws)}</dd></div><div><dt>Loss</dt><dd>{compactNumber(mode.losses)}</dd></div></dl></article>
-    })}</div>
-  </div>
-}
-
-export function OpenF1SessionsPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const mrData = isRecord(root.MRData) ? root.MRData : {}
-  const raceTable = isRecord(mrData.RaceTable) ? mrData.RaceTable : {}
-  const qualifyingRace = recordArray(raceTable.Races)[0]
-  if (qualifyingRace) {
-    const circuit = isRecord(qualifyingRace.Circuit) ? qualifyingRace.Circuit : {}
-    const location = isRecord(circuit.Location) ? circuit.Location : {}
-    const cards: SemanticCard[] = recordArray(qualifyingRace.QualifyingResults).slice(0, 10).map((result) => {
-      const driver = isRecord(result.Driver) ? result.Driver : {}
-      const constructor = isRecord(result.Constructor) ? result.Constructor : {}
-      const name = [cleanText(driver.givenName), cleanText(driver.familyName)].filter(Boolean).join(' ') || cleanText(driver.code) || 'Formula 1 driver'
-      return {
-        title: name,
-        eyebrow: `${cleanText(qualifyingRace.raceName) ?? 'Grand Prix'} · P${previewValue(result.position)}`,
-        badge: cleanText(driver.code) ?? `#${previewValue(result.number)}`,
-        description: `${cleanText(constructor.name) ?? 'Constructor unavailable'} · ${cleanText(driver.nationality) ?? 'Driver'} · ${cleanText(location.locality) ?? 'Circuit'}`,
-        metrics: [
-          { label: 'Q1', value: previewValue(result.Q1) },
-          { label: 'Q2', value: previewValue(result.Q2) },
-          { label: 'Q3', value: previewValue(result.Q3) },
-          { label: 'Circuit', value: cleanText(circuit.circuitName) ?? '—' },
-        ],
-      }
-    })
-    return <SemanticCards cards={cards} emptyTitle="Qualifying results unavailable"/>
-  }
-  const standingsTable = isRecord(mrData.StandingsTable) ? mrData.StandingsTable : {}
-  const standingsList = recordArray(standingsTable.StandingsLists)[0]
-  if (standingsList) {
-    const cards: SemanticCard[] = recordArray(standingsList.DriverStandings).slice(0, 10).map((standing) => {
-      const driver = isRecord(standing.Driver) ? standing.Driver : {}
-      const constructor = recordArray(standing.Constructors)[0] ?? {}
-      const name = [cleanText(driver.givenName), cleanText(driver.familyName)].filter(Boolean).join(' ') || cleanText(driver.code) || 'Formula 1 driver'
-      return {
-        title: name,
-        eyebrow: `Championship position ${previewValue(standing.position)} · ${cleanText(driver.nationality) ?? 'Driver'}`,
-        badge: `${previewValue(standing.points)} pts`,
-        description: `${cleanText(constructor.name) ?? 'Constructor unavailable'} · ${previewValue(standing.wins)} win${String(standing.wins) === '1' ? '' : 's'}`,
-        metrics: [
-          { label: 'Position', value: previewValue(standing.position) },
-          { label: 'Points', value: previewValue(standing.points) },
-          { label: 'Wins', value: previewValue(standing.wins) },
-          { label: 'Constructor', value: previewValue(constructor.name) },
-        ],
-        tags: [cleanText(driver.code), cleanText(constructor.nationality)].filter((value): value is string => Boolean(value)),
-      }
-    })
-    return <SemanticCards cards={cards} emptyTitle="Formula 1 standings unavailable"/>
-  }
-  if (Array.isArray(root.events)) {
-    const cards: SemanticCard[] = recordArray(root.events).slice(0, 8).map((event) => {
-      const competition = recordArray(event.competitions)[0] ?? {}
-      const competitors = recordArray(competition.competitors)
-      const leader = competitors[0] && isRecord(competitors[0].athlete) ? competitors[0].athlete : {}
-      const type = isRecord(competition.type) ? competition.type : {}
-      const season = isRecord(event.season) ? event.season : {}
-      return {
-        title: cleanText(event.name) ?? cleanText(event.shortName) ?? 'Formula 1 event',
-        eyebrow: `Formula 1 · ${previewValue(season.year)}`,
-        badge: cleanText(type.abbreviation) ?? 'F1',
-        description: `${dateParts(event.date).full || previewValue(event.date)} · ${competitors.length} drivers in the current session`,
-        metrics: [
-          { label: 'Session', value: cleanText(type.abbreviation) ?? cleanText(type.name) ?? 'Race weekend' },
-          { label: 'Leader / P1', value: cleanText(leader.displayName ?? leader.fullName) ?? 'Pending' },
-          { label: 'Starts', value: previewValue(event.date) },
-          { label: 'Ends', value: previewValue(event.endDate) },
-        ],
-      }
-    })
-    return <SemanticCards cards={cards} emptyTitle="Formula 1 scoreboard unavailable"/>
-  }
-  const cards: SemanticCard[] = recordArray(data).map((session) => ({
-    title: cleanText(session.meeting_name) ?? cleanText(session.circuit_short_name) ?? 'Formula 1 session',
-    eyebrow: `${cleanText(session.country_name) ?? 'Grand Prix'} · ${cleanText(session.location) ?? 'Circuit'}`,
-    badge: cleanText(session.session_name) ?? 'Race',
-    description: `Completed ${cleanText(session.session_type) ?? 'race'} session.`,
-    metrics: [
-      { label: 'Session start', value: dateParts(session.date_start).full || previewValue(session.date_start) },
-      { label: 'Circuit', value: cleanText(session.circuit_short_name) ?? '—' },
-      { label: 'Session key', value: previewValue(session.session_key) },
-      { label: 'Meeting key', value: previewValue(session.meeting_key) },
-    ],
-    tags: [cleanText(session.country_code), cleanText(session.gmt_offset)].filter((value): value is string => Boolean(value)),
-  }))
-  return <SemanticCards cards={cards} emptyTitle="Formula 1 sessions unavailable"/>
-}
-
-export function WiktionaryEntryPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const languageEntries: Array<Record<string, unknown> & { languageCode: string }> = Object.entries(root).flatMap(([languageCode, value]) => recordArray(value).map((entry) => ({ ...entry, languageCode })))
-  if (!languageEntries.length) return <div className="weather-empty"><strong>Wiktionary entry unavailable</strong><span>No structured language definitions were returned.</span></div>
-  const primary = languageEntries[0]
-  return <div className="dictionary-preview wiktionary-preview"><div className="dictionary-hero"><div><span>{cleanText(primary.language) ?? previewLabel(primary.languageCode)} Wiktionary</span><strong>Definition entry</strong><b>{languageEntries.length} part{languageEntries.length === 1 ? '' : 's'} of speech</b></div><span aria-hidden="true">W</span></div><div className="dictionary-meanings">{languageEntries.slice(0, 8).map((entry, index) => {
-    const definitions = recordArray(entry.definitions)
-    const synonyms = [...textArray(entry.synonyms), ...definitions.flatMap((definition) => textArray(definition.synonyms))]
-    return <section key={`${entry.languageCode}-${entry.partOfSpeech}-${index}`}><header><span>{index + 1}</span><h3>{cleanText(entry.partOfSpeech) ?? 'Meaning'}</h3></header><ol>{definitions.slice(0, 4).map((definition, definitionIndex) => {
-      const examples = textArray(definition.examples)
-      return <li key={definitionIndex}><p>{cleanText(definition.definition) ?? 'Definition unavailable'}</p>{examples[0] && <blockquote>“{examples[0]}”</blockquote>}</li>
-    })}</ol>{synonyms.length ? <footer><b>Related words</b>{[...new Set(synonyms)].slice(0, 6).map((word) => <span key={word}>{word}</span>)}</footer> : null}</section>
-  })}</div></div>
-}
-
-export function PoetryReaderPreview({ data }: { data: unknown }) {
-  const poems = recordArray(data).slice(0, 4)
-  if (!poems.length) return <div className="weather-empty"><strong>Poems unavailable</strong><span>PoetryDB did not return a poem for this author.</span></div>
-  const first = poems[0]
-  return <div className="dictionary-preview poetry-preview"><div className="dictionary-hero"><div><span>Public-domain reading room</span><strong>{cleanText(first.author) ?? 'Selected poet'}</strong><b>{poems.length} poem{poems.length === 1 ? '' : 's'} in this reading</b></div><span aria-hidden="true">¶</span></div><div className="dictionary-meanings">{poems.map((poem, index) => <section key={`${poem.title}-${index}`}><header><span>{index + 1}</span><h3>{cleanText(poem.title) ?? `Poem ${index + 1}`}</h3></header><ol><li><p>{textArray(poem.lines).slice(0, 6).join(' / ') || 'Poem lines unavailable'}</p><blockquote>{previewValue(poem.linecount)} lines · {cleanText(poem.author) ?? 'Unknown author'}</blockquote></li></ol></section>)}</div></div>
-}
-
 export function StarWarsPeoplePreview({ data }: { data: unknown }) {
   const root = isRecord(data) ? data : {}
   const cards: SemanticCard[] = recordArray(root.results).map((person) => ({
@@ -368,36 +179,6 @@ export function AnimeQuotePreview({ data }: { data: unknown }) {
   if (!contractValid) return <div className="domain-card domain-empty" data-domain-card="anime-quote" data-result-state="invalid" data-provider-status={status ?? ''} data-contract-valid="false"><h3>Anime quote unavailable</h3><p>AnimeChan returned a response that does not match its documented Quote contract.</p></div>
 
   return <div className="dictionary-preview anime-quote-preview" data-domain-card="anime-quote" data-result-state="ready" data-provider-status={status} data-contract-valid="true" data-anime-id={animeId} data-character-id={characterId}><div className="dictionary-hero"><div><span>Anime quote stage</span><strong>{animeName}</strong><b>{characterName}</b></div><span aria-hidden="true">“</span></div><div className="dictionary-meanings"><section><header><span>AQ</span><h3>{characterName}</h3></header><ol><li><p>“{content}”</p><blockquote>{altName.value ?? animeName}</blockquote></li></ol></section></div></div>
-}
-
-export function BrazilPostcodePreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  if (!Object.keys(root).length) return <div className="weather-empty"><strong>Brazilian postcode unavailable</strong><span>No address profile was returned.</span></div>
-  const location = isRecord(root.location) ? root.location : {}
-  const coordinates = isRecord(location.coordinates) ? location.coordinates : {}
-  const coordinateText = coordinates.latitude !== undefined && coordinates.longitude !== undefined ? `${previewValue(coordinates.latitude)}, ${previewValue(coordinates.longitude)}` : 'Not supplied'
-  return <SemanticCards cards={[{
-    title: cleanText(root.street) ?? cleanText(root.cep) ?? 'Brazilian postcode',
-    eyebrow: `CEP ${previewValue(root.cep)} · ${cleanText(root.city) ?? 'Brazil'}`,
-    badge: cleanText(root.state) ?? 'BR',
-    description: [cleanText(root.neighborhood), cleanText(root.city), cleanText(root.state)].filter(Boolean).join(' · '),
-    metrics: [
-      { label: 'City', value: previewValue(root.city) },
-      { label: 'Neighbourhood', value: previewValue(root.neighborhood) },
-      { label: 'Coordinates', value: coordinateText },
-      { label: 'Timezone', value: previewValue(root.timezoneName) },
-      { label: 'Source service', value: previewValue(root.service) },
-    ],
-    tags: ['Address profile', cleanText(location.type)].filter((value): value is string => Boolean(value)),
-  }]} emptyTitle="Brazilian postcode unavailable"/>
-}
-
-export function DndSpellPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  if (!Object.keys(root).length) return <div className="weather-empty"><strong>Spell unavailable</strong><span>No matching D&amp;D 5e spell was returned.</span></div>
-  const school = isRecord(root.school) ? cleanText(root.school.name) : undefined
-  const classes = recordArray(root.classes).map((entry) => cleanText(entry.name)).filter((value): value is string => Boolean(value))
-  return <div className="dictionary-preview dnd-spell-preview"><div className="dictionary-hero"><div><span>{school ?? 'D&amp;D 5e'} spell · Level {previewValue(root.level)}</span><strong>{cleanText(root.name) ?? 'Spell'}</strong><b>{cleanText(root.range) ?? 'Range unavailable'} · {root.concentration ? 'Concentration' : 'No concentration'}</b></div><span aria-hidden="true">✦</span></div><div className="dictionary-meanings"><section><header><span>1</span><h3>Effect</h3></header><ol>{textArray(root.desc).map((paragraph, index) => <li key={index}><p>{paragraph}</p></li>)}</ol>{textArray(root.higher_level).length ? <footer><b>At higher levels</b><span>{textArray(root.higher_level).join(' ')}</span></footer> : null}</section></div><dl className="country-facts"><div><dt>Casting time</dt><dd>{previewValue(root.casting_time)}</dd></div><div><dt>Components</dt><dd>{textArray(root.components).join(', ') || '—'}</dd></div><div><dt>Duration</dt><dd>{previewValue(root.duration)}</dd></div><div><dt>Classes</dt><dd>{classes.join(', ') || '—'}</dd></div></dl></div>
 }
 
 type SsotStat = { label: string; value: string; note?: string }
@@ -451,27 +232,6 @@ export function NhtsaMakesPreview({ data }: { data: unknown }) {
     { label: 'Registry count', value: compactNumber(numberValue(root.Count) ?? results.length), note: 'manufacturers' },
     { label: 'Previewed', value: String(Math.min(results.length, 8)), note: 'first records' },
   ]}/><SemanticCards cards={cards} emptyTitle="Vehicle makes unavailable"/></div>
-}
-
-export function GbifTaxonomyPreview({ data }: { data: unknown }) {
-  const root = isRecord(data) ? data : {}
-  const results = recordArray(root.results)
-  const cards: SemanticCard[] = results.slice(0, 8).map((taxon) => ({
-    title: cleanText(taxon.scientificName ?? taxon.canonicalName) ?? 'Taxon',
-    eyebrow: [cleanText(taxon.kingdom), cleanText(taxon.phylum), cleanText(taxon.class)].filter(Boolean).join(' › ') || 'GBIF taxonomy',
-    badge: cleanText(taxon.rank) ?? 'Taxon',
-    description: cleanText(taxon.authorship),
-    metrics: [
-      { label: 'Status', value: previewValue(taxon.taxonomicStatus) },
-      { label: 'Family', value: previewValue(taxon.family) },
-      { label: 'Genus', value: previewValue(taxon.genus) },
-    ],
-    tags: [cleanText(taxon.order), cleanText(taxon.nameType), taxon.synonym ? 'Synonym' : 'Accepted name'].filter((value): value is string => Boolean(value)),
-  }))
-  return <div className="ssot-stack"><SsotStatStrip eyebrow="Global Biodiversity Information Facility" title="Taxonomy matches" stats={[
-    { label: 'Matching taxa', value: compactNumber(numberValue(root.count) ?? results.length), note: 'search result count' },
-    { label: 'Previewed', value: String(Math.min(results.length, 8)), note: 'taxonomic records' },
-  ]}/><SemanticCards cards={cards} emptyTitle="Taxonomy records unavailable"/></div>
 }
 
 const GO_MODULE_VERSION = /^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+incompatible)?$/
@@ -620,9 +380,21 @@ export { NewtonMathPreview } from './NewtonMathPreview'
 export { IpifyPublicIpPreview } from './IpifyPublicIpPreview'
 export { CatFactPreview } from './CatFactPreview'
 
-export function GeneratedImagePreview({ api, requestUrl }: { api: ApiDemo; requestUrl?: string }) {
-  if (!requestUrl) return <div className="weather-empty"><strong>Image unavailable</strong><span>No request URL was captured for this response.</span></div>
-  return <div className="media-preview single"><article><img src={requestUrl} alt={api.name} loading="lazy"/><div><small>{api.category}</small><h3>{api.name}</h3><p>Rendered directly from the live request URL.</p></div></article></div>
+export function GeneratedImagePreview({ api, requestUrl, executedRequest, responseMedia }: { api: ApiDemo; requestUrl?: string; executedRequest?: ExecutedRequestContext; responseMedia?: ResponseMediaContext }) {
+  const requestBound = Boolean(
+    requestUrl
+    && executedRequest
+    && executedRequest.method.toUpperCase() === 'GET'
+    && executedRequest.body === undefined
+    && executedRequest.url === requestUrl,
+  )
+  const mediaValid = getApiResponseType(api) === 'image' && Boolean(responseMedia?.objectUrl) && Boolean(responseMedia?.contentType.startsWith('image/'))
+
+  if (!requestBound || !mediaValid || !responseMedia) {
+    return <div className="media-preview single" data-domain-card="generated-image" data-result-state="invalid" data-request-bound={String(requestBound)}><article><div><small>{api.category}</small><h3>Invalid generated image response</h3><p>The fetched response could not be bound to the exact supported image request.</p></div></article></div>
+  }
+
+  return <div className="media-preview single" data-domain-card="generated-image" data-result-state="ready" data-request-bound="true" data-content-type={responseMedia.contentType}><article><img src={responseMedia.objectUrl} alt={api.name}/><div><small>{api.category}</small><h3>{api.name}</h3><p>Rendered from the exact fetched response body without a second provider request.</p></div></article></div>
 }
 
 export { OpenMeteoSeasonalPreview } from './OpenMeteoSeasonalPreview'

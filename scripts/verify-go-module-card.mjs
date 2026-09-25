@@ -12,7 +12,7 @@ const setInput = async (b, name, value) => {
   await b.ev(`(()=>{const e=document.querySelector('input[name=${JSON.stringify(name)}]');if(!e)throw Error('missing input');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event('input',{bubbles:true}));})()`)
   await sleep(100)
 }
-const readDom = (b) => b.ev(`(()=>{const shell=document.querySelector('.demo-preview'),card=shell?.querySelector('[data-domain-card="go-module-versions"]');return {layout:shell?.dataset.previewLayout||'',fallback:shell?.dataset.ssotFallback||'',state:card?.dataset.resultState||'',requested:card?.dataset.requestedModule||'',bound:card?.dataset.requestBound||'',providerCount:Number(card?.dataset.providerVersionCount),validCount:Number(card?.dataset.validVersionCount),invalidCount:Number(card?.dataset.invalidVersionCount),highest:card?.dataset.highestListedVersion||'',endpoint:document.querySelector('.endpoint-box code')?.textContent||'',overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`)
+const readDom = (b) => b.ev(`(()=>{const shell=document.querySelector('.demo-preview'),card=shell?.querySelector('[data-domain-card="go-module-versions"]');return {layout:shell?.dataset.previewLayout||'',fallback:shell?.dataset.ssotFallback||'',state:card?.dataset.resultState||'',requested:card?.dataset.requestedModule||'',bound:card?.dataset.requestBound||'',providerCount:Number(card?.dataset.providerVersionCount),validCount:Number(card?.dataset.validVersionCount),invalidCount:Number(card?.dataset.invalidVersionCount),highest:card?.dataset.highestListedVersion||'',endpoint:document.querySelector('.endpoint-box code')?.textContent||'',responseTab:document.querySelector('[data-output-tab="response"]')?.textContent?.trim()||'',copyAction:document.querySelector('.copy-output')?.textContent?.trim()||'',responseType:document.querySelector('.request-lab')?.dataset.responseType||'',responseContentTypes:document.querySelector('.request-lab')?.dataset.responseContentTypes||'',overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`)
 
 let b
 try {
@@ -36,6 +36,10 @@ try {
   assert.equal(dom.invalidCount, 0)
   assert(result.data.versions.includes(dom.highest), 'highest semantic version must come from the provider list')
   assert.equal(dom.endpoint, expectedEndpoint)
+  assert.equal(dom.responseType, 'text')
+  assert.equal(dom.responseContentTypes, 'text/plain')
+  assert.equal(dom.responseTab, 'Response details')
+  assert.equal(dom.copyAction, 'Copy details')
   assert.equal(dom.overflow, false)
 
   await b.viewport(390, 844)
@@ -45,7 +49,7 @@ try {
   assert.equal(unnamed(ax.nodes).length, 0)
   report.errors.push(...b.errors.map(String))
   assert.deepEqual(report.errors, [])
-  report.checks.push({ id:'go-module-proxy', case:'live mixed-case GOPROXY module-path escaping and semantic card', state:dom.state, requestedModule:dom.requested, endpoint:dom.endpoint, versions:result.data.versions.length, highestListed:dom.highest, mobileOverflow:false, unnamedControls:0 })
+  report.checks.push({ id:'go-module-proxy', case:'live mixed-case GOPROXY module-path escaping, semantic card, and text-response lab semantics', state:dom.state, requestedModule:dom.requested, endpoint:dom.endpoint, responseType:dom.responseType, responseTab:dom.responseTab, copyAction:dom.copyAction, versions:result.data.versions.length, highestListed:dom.highest, mobileOverflow:false, unnamedControls:0 })
   report.verdict = 'PASS'
 } catch (error) {
   report.verdict = 'FAIL'; report.error = String(error); if (b) report.errors.push(...b.errors.map(String))

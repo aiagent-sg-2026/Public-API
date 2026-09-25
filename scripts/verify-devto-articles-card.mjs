@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const endpoint = 'https://dev.to/api/articles?tag=javascript&per_page=8&page=1'
 const report = {
   origin: 'https://yapweijun1996.github.io',
   publication: 'unpublished local app bundle under the real GitHub Pages origin',
-  source: 'one live Forem v1 public article request plus deterministic HTTP-200 fixtures',
+  source: 'SSOT input validation, one live Forem v1 public article request, plus deterministic HTTP-200 fixtures',
   checks: [], errors: [],
 }
 const unnamed = (nodes) => nodes.filter((node) => !node.ignored && ['button','combobox','textbox','spinbutton','searchbox','tab','radio','link'].includes(node.role?.value) && !(node.name?.value || '').trim())
@@ -36,6 +36,57 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('devto')
+  const inputContract = await b.ev(`(() => {
+    const tag = document.querySelector('#parameter-tag')
+    const limit = document.querySelector('#parameter-limit')
+    return {
+      tagMinLength: tag?.getAttribute('minlength') || '',
+      limitStep: limit?.getAttribute('step') || '',
+      limitMin: limit?.getAttribute('min') || '',
+      limitMax: limit?.getAttribute('max') || '',
+    }
+  })()`)
+  assert.deepEqual(inputContract, { tagMinLength: '1', limitStep: '1', limitMin: '1', limitMax: '20' })
+
+  const beforeFractional = b.requestCount
+  const fractional = await b.ev(`(() => {
+    const input = document.querySelector('#parameter-limit')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '8.5')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return { valid: input.checkValidity(), stepMismatch: input.validity.stepMismatch }
+  })()`)
+  assert.deepEqual(fractional, { valid: false, stepMismatch: true })
+  await b.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeFractional, 'Fractional DEV article limit reached a provider request')
+
+  const beforeBlankTag = b.requestCount
+  await b.ev(`(() => {
+    const tag = document.querySelector('#parameter-tag')
+    const limit = document.querySelector('#parameter-limit')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(limit, '8')
+    limit.dispatchEvent(new Event('input', { bubbles: true }))
+    limit.dispatchEvent(new Event('change', { bubbles: true }))
+    setter.call(tag, '   ')
+    tag.dispatchEvent(new Event('input', { bubbles: true }))
+    tag.dispatchEvent(new Event('change', { bubbles: true }))
+    document.querySelector('form.parameter-card').requestSubmit()
+  })()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeBlankTag, 'Whitespace-only DEV article tag reached a provider request')
+  await b.ev(`(() => {
+    const tag = document.querySelector('#parameter-tag')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(tag, 'javascript')
+    tag.dispatchEvent(new Event('input', { bubbles: true }))
+    tag.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await sleep(100)
+  report.checks.push({ id:'devto', case:'SSOT parameter validation', tagMinLength:1, limitStep:1, limitMin:1, limitMax:20, fractionalLimitRejected:true, whitespaceTagRejected:true, providerRequests:0 })
+
   const run = await b.run()
   assert.equal(run.ok, true, run.error)
   assert(Array.isArray(run.data), 'live Forem published article response must be an array')

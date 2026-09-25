@@ -75,6 +75,8 @@ export type ApiField = {
   options?: FieldOption[]
 }
 
+export type ApiResponseType = 'json' | 'text' | 'image'
+
 export type ApiDemo = {
   id: string
   name: string
@@ -91,6 +93,8 @@ export type ApiDemo = {
   buildBody?: (parameters: Record<string, string>) => unknown
   bodyEncoding?: 'json' | 'form'
   headers?: Record<string, string>
+  responseType?: Exclude<ApiResponseType, 'json'>
+  responseContentTypes?: string[]
   parseResponse?: (text: string) => unknown
   successNoContent?: { statuses: number[]; data: unknown }
   risk?: 'Low' | 'Review'
@@ -98,6 +102,8 @@ export type ApiDemo = {
   agentExecution?: Extract<AgentExecutionPolicy, { mode: 'manual-only' }>
   automatedVerification?: AutomatedVerificationPolicy
 }
+
+export const getApiResponseType = (api: Pick<ApiDemo, 'responseType'>): ApiResponseType => api.responseType ?? 'json'
 
 const SEARCH_STOP_WORDS = new Set([
   'a', 'an', 'and', 'api', 'apis', 'are', 'by', 'can', 'could', 'find', 'for', 'from', 'get', 'give', 'help', 'how', 'i', 'in', 'into', 'is', 'me', 'my',
@@ -151,6 +157,14 @@ const toDmyDate = (value: string): string => {
 const clampInt = (value: string, min: number, max: number, fallback: number): number => {
   const parsed = Number.parseInt(value, 10)
   return Math.min(max, Math.max(min, Number.isNaN(parsed) ? fallback : parsed))
+}
+
+const strictBoundedInteger = (value: string, min: number, max: number, label: string): number => {
+  const parsed = Number(value.trim())
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${label} must be an integer between ${min} and ${max}.`)
+  }
+  return parsed
 }
 
 const sparqlStringLiteral = (value: string): string =>
@@ -366,12 +380,15 @@ const coreApis: ApiDemo[] = [
         defaultValue: '7',
         min: 1,
         max: 100,
+        step: 1,
         help: 'Choose a post from 1 to 100.',
       },
     ],
     buildUrl: ({ postId = '7' }) => {
-      const safeId = clampInt(postId, 1, 100, 7)
-      return `https://jsonplaceholder.typicode.com/posts/${safeId}`
+      const trimmed = postId.trim()
+      const numeric = Number(trimmed)
+      const pathId = Number.isSafeInteger(numeric) && numeric >= 1 && numeric <= 100 ? String(numeric) : trimmed
+      return `https://jsonplaceholder.typicode.com/posts/${encode(pathId)}`
     },
   },
   {
@@ -499,11 +516,11 @@ const additionalInteractiveApis: ApiDemo[] = [
         { label: 'All events', value: 'all' }, { label: 'Wildfires', value: 'wildfires' }, { label: 'Severe storms', value: 'severeStorms' },
         { label: 'Volcanoes', value: 'volcanoes' }, { label: 'Floods', value: 'floods' }, { label: 'Earthquakes', value: 'earthquakes' },
       ] },
-      { id: 'days', label: 'Recent days', type: 'number', defaultValue: '30', min: 1, max: 365, help: 'Look back between 1 and 365 days.' },
-      limitField({ label: 'Events', defaultValue: '6', min: 1, max: 10, help: 'Return between 1 and 10 active events.' }),
+      { id: 'days', label: 'Recent days', type: 'number', defaultValue: '30', min: 1, max: 365, step: 1, help: 'Look back between 1 and 365 days.' },
+      limitField({ label: 'Events', defaultValue: '6', min: 1, max: 10, step: 1, help: 'Return between 1 and 10 active events.' }),
     ],
     buildUrl: ({ category = 'all', days = '30', limit = '6' }) => {
-      const query = new URLSearchParams({ status: 'open', days: String(clampInt(days, 1, 365, 30)), limit: String(clampInt(limit, 1, 10, 6)) })
+      const query = new URLSearchParams({ status: 'open', days: days.trim(), limit: limit.trim() })
       if (category !== 'all') query.set('category', category)
       return `https://eonet.gsfc.nasa.gov/api/v3/events?${query.toString()}`
     },
@@ -518,7 +535,7 @@ const additionalInteractiveApis: ApiDemo[] = [
       ] },
     ],
     buildUrl: ({ routeType = '0,1' }) => {
-      const query = new URLSearchParams({ 'filter[type]': routeType || '0,1' })
+      const query = new URLSearchParams({ 'filter[type]': routeType })
       return `https://api-v3.mbta.com/routes?${query.toString()}`
     },
     usageNote: 'The MBTA allows keyless experimentation with a lower request allowance; production apps should request a free API key.',
@@ -528,7 +545,7 @@ const additionalInteractiveApis: ApiDemo[] = [
     description: 'Generate multiple-choice trivia questions for quiz prototypes and interactive demos.',
     documentationUrl: 'https://opentdb.com/api_config.php', accent: '#7c3aed', monogram: 'Q',
     fields: [
-      { id: 'amount', label: 'Questions', type: 'number', defaultValue: '6', min: 1, max: 10, help: 'Generate between 1 and 10 questions.' },
+      { id: 'amount', label: 'Questions', type: 'number', defaultValue: '6', min: 1, max: 10, step: 1, help: 'Generate between 1 and 10 questions.' },
       { id: 'category', label: 'Category', type: 'select', defaultValue: '9', help: 'Choose a trivia category.', options: [
         { label: 'General knowledge', value: '9' }, { label: 'Books', value: '10' }, { label: 'Film', value: '11' }, { label: 'Science & nature', value: '17' },
         { label: 'Computers', value: '18' }, { label: 'Geography', value: '22' }, { label: 'History', value: '23' }, { label: 'Sports', value: '21' },
@@ -538,9 +555,16 @@ const additionalInteractiveApis: ApiDemo[] = [
       ] },
     ],
     buildUrl: ({ amount = '6', category = '9', difficulty = 'medium' }) => {
-      const safeAmount = clampInt(amount, 1, 10, 6)
-      const query = new URLSearchParams({ amount: String(safeAmount), category, difficulty, type: 'multiple' })
+      const query = new URLSearchParams({ amount: amount.trim(), category, difficulty, type: 'multiple' })
       return `https://opentdb.com/api.php?${query.toString()}`
+    },
+    usageNote: 'Free and keyless. Open Trivia DB data is licensed CC BY-SA 4.0. The provider limits each IP to one API request every 5 seconds and allows at most 50 questions per call; this browser demo caps a request at 10 questions.',
+    automatedVerification: {
+      mode: 'cadence-limited',
+      minimumIntervalSeconds: 5,
+      retryOnNon2xx: false,
+      reason: 'Open Trivia DB limits each IP to one API request every 5 seconds. Automated verification must use one isolated request per cadence window and must not add a same-run non-2xx retry.',
+      policyUrl: 'https://opentdb.com/api_config.php',
     },
   },
 ]
@@ -652,10 +676,10 @@ const importedRecommendedApis: ApiDemo[] = [
     usageNote: 'Uses the current Forem API v1 media type. This public article-list endpoint does not require an API key; tag-filtered results are provider-ranked and should not be described as a guaranteed chronological feed.',
     fields: [
       { id: 'tag', label: 'Tag', type: 'text', defaultValue: 'javascript', placeholder: 'e.g. javascript', minLength: 1, maxLength: 50, help: 'Filter published DEV articles by one exact tag.' },
-      limitField({ label: 'Articles', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 published articles from page 1.' }),
+      limitField({ label: 'Articles', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 published articles from page 1.' }),
     ],
     headers: { Accept: 'application/vnd.forem.api-v1+json' },
-    buildUrl: ({ tag = 'javascript', limit = '8' }) => `https://dev.to/api/articles?${new URLSearchParams({ tag: tag.trim() || 'javascript', per_page: String(clampInt(limit, 1, 20, 8)), page: '1' }).toString()}`,
+    buildUrl: ({ tag = 'javascript', limit = '8' }) => `https://dev.to/api/articles?${new URLSearchParams({ tag: tag.trim(), per_page: limit.trim(), page: '1' }).toString()}`,
   },
   fixedApi({
     id: 'fiscal-data-treasury', name: 'U.S. Treasury Agency Overview', provider: 'USAspending.gov', category: 'Finance',
@@ -724,12 +748,10 @@ const importedRecommendedApis: ApiDemo[] = [
     keywords: ['npm package search', 'node package registry', 'javascript packages', 'dependencies'],
     fields: [
       queryField({ label: 'Package search', defaultValue: 'react', placeholder: 'e.g. react', minLength: 1, help: 'Search npm packages using the registry text query.' }),
-      limitField({ label: 'Packages', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 npm registry search results.' }),
+      limitField({ label: 'Packages', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 npm registry search results.' }),
     ],
-    buildUrl: ({ query = 'react', limit = '8' }) => {
-      const safeLimit = clampInt(limit, 1, 20, 8)
-      return `https://registry.npmjs.org/-/v1/search?${new URLSearchParams({ text: query.trim(), size: String(safeLimit) }).toString()}`
-    },
+    buildUrl: ({ query = 'react', limit = '8' }) =>
+      `https://registry.npmjs.org/-/v1/search?${new URLSearchParams({ text: query.trim(), size: limit.trim() }).toString()}`,
   },
   {
     id: 'nvd-cpe-search', name: 'NVD CPE Search', provider: 'NIST NVD', category: 'Developer',
@@ -740,12 +762,10 @@ const importedRecommendedApis: ApiDemo[] = [
     automatedVerification: NVD_AUTOMATED_VERIFICATION,
     fields: [
       queryField({ label: 'CPE keyword', defaultValue: 'openssl', placeholder: 'e.g. openssl', minLength: 1, help: 'Search across components of NVD CPE product names.' }),
-      limitField({ label: 'Products', defaultValue: '8', min: 1, max: 20, help: 'Return a bounded first page of 1 to 20 CPE product identities.' }),
+      limitField({ label: 'Products', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return a bounded first page of 1 to 20 whole CPE product identities.' }),
     ],
-    buildUrl: ({ query = 'openssl', limit = '8' }) => {
-      const resultsPerPage = clampInt(limit, 1, 20, 8)
-      return `https://services.nvd.nist.gov/rest/json/cpes/2.0?${new URLSearchParams({ keywordSearch: query.trim() || 'openssl', resultsPerPage: String(resultsPerPage) }).toString()}`
-    },
+    buildUrl: ({ query = 'openssl', limit = '8' }) =>
+      `https://services.nvd.nist.gov/rest/json/cpes/2.0?${new URLSearchParams({ keywordSearch: query.trim(), resultsPerPage: limit.trim() }).toString()}`,
   },
   {
     id: 'nvd-cve-detail', name: 'NVD CVE Detail', provider: 'NIST NVD', category: 'Developer',
@@ -756,7 +776,7 @@ const importedRecommendedApis: ApiDemo[] = [
     usageNote: NVD_USAGE_NOTE,
     automatedVerification: NVD_AUTOMATED_VERIFICATION,
     fields: [cveField('CVE identifier', 'CVE-2024-3094')],
-    buildUrl: ({ cve = 'CVE-2024-3094' }) => `https://services.nvd.nist.gov/rest/json/cves/2.0?${new URLSearchParams({ cveId: cve.trim() || 'CVE-2024-3094' }).toString()}`,
+    buildUrl: ({ cve = 'CVE-2024-3094' }) => `https://services.nvd.nist.gov/rest/json/cves/2.0?${new URLSearchParams({ cveId: cve.trim() }).toString()}`,
   },
   {
     id: 'nvd-cves', name: 'NVD CVE Search', provider: 'NIST NVD', category: 'Developer',
@@ -768,12 +788,10 @@ const importedRecommendedApis: ApiDemo[] = [
     keywords: ['CVE keyword search', 'vulnerability description search', 'security vulnerability discovery'],
     fields: [
       queryField({ label: 'CVE description keywords', defaultValue: 'postgresql', placeholder: 'e.g. postgresql', minLength: 1, maxLength: 100, help: 'Search current CVE descriptions. NVD requires every space-separated term to match and applies a trailing wildcard to each term.' }),
-      limitField({ label: 'CVEs', defaultValue: '8', min: 1, max: 20, help: 'Return a bounded first page of 1 to 20 matching CVE records.' }),
+      limitField({ label: 'CVEs', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return a bounded first page of 1 to 20 whole matching CVE records.' }),
     ],
-    buildUrl: ({ query = 'postgresql', limit = '8' }) => {
-      const resultsPerPage = clampInt(limit, 1, 20, 8)
-      return `https://services.nvd.nist.gov/rest/json/cves/2.0?${new URLSearchParams({ keywordSearch: query.trim() || 'postgresql', resultsPerPage: String(resultsPerPage) }).toString()}`
-    },
+    buildUrl: ({ query = 'postgresql', limit = '8' }) =>
+      `https://services.nvd.nist.gov/rest/json/cves/2.0?${new URLSearchParams({ keywordSearch: query.trim(), resultsPerPage: limit.trim() }).toString()}`,
   },
   {
     id: 'nvd-recent-cves', name: 'NVD Recently Modified CVEs', provider: 'NIST NVD', category: 'Developer',
@@ -822,11 +840,10 @@ const importedRecommendedApis: ApiDemo[] = [
     },
     fields: [
       textField('tags', { label: 'Required tags', defaultValue: 'javascript', placeholder: 'e.g. javascript;reactjs', minLength: 1, maxLength: 200, pattern: '[^;]+(?:;[^;]+){0,4}', patternDescription: 'Enter one to five semicolon-delimited Stack Overflow tags.', help: 'Every returned question must contain all requested tags. Separate up to five tags with semicolons.' }),
-      limitField({ label: 'Questions', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 recently active questions.' }),
+      limitField({ label: 'Questions', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 recently active questions.' }),
     ],
     buildUrl: ({ tags = 'javascript', limit = '8' }) => {
-      const safeLimit = clampInt(limit, 1, 20, 8)
-      const params = new URLSearchParams({ order: 'desc', sort: 'activity', tagged: tags.trim() || 'javascript', site: 'stackoverflow', pagesize: String(safeLimit) })
+      const params = new URLSearchParams({ order: 'desc', sort: 'activity', tagged: tags.trim(), site: 'stackoverflow', pagesize: limit.trim() })
       return `https://api.stackexchange.com/2.3/questions?${params.toString()}`
     },
   },
@@ -843,13 +860,13 @@ const importedRecommendedApis: ApiDemo[] = [
     accent: '#0f4c81', monogram: 'US', method: 'POST',
     usageNote: 'Federal fiscal years run from October 1 through September 30. This demo sets date_type=new_awards_only so only awards whose base transaction date falls inside the selected fiscal year are returned, searches prime contract award types A-D, and sorts by Base Obligation Date descending. For contract awards, USAspending maps Award Amount to the award total_obligation field; it is not a transaction amount or potential award ceiling.',
     fields: [
-      numberField('fiscalYear', { label: 'Federal fiscal year', defaultValue: String(defaultFederalFiscalYear), min: 2008, max: currentFederalFiscalYear, help: 'Choose FY2008 through the current federal fiscal year. The request uses new_awards_only, so the award’s base transaction date must fall between October 1 and September 30.' }),
-      limitField({ label: 'Awards', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 new prime contract awards for the selected federal fiscal year.' }),
+      numberField('fiscalYear', { label: 'Federal fiscal year', defaultValue: String(defaultFederalFiscalYear), min: 2008, max: currentFederalFiscalYear, step: 1, help: 'Choose FY2008 through the current federal fiscal year. The request uses new_awards_only, so the award’s base transaction date must fall between October 1 and September 30.' }),
+      limitField({ label: 'Awards', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 new prime contract awards for the selected federal fiscal year.' }),
     ],
     buildUrl: () => 'https://api.usaspending.gov/api/v2/search/spending_by_award/',
     buildBody: ({ fiscalYear = String(defaultFederalFiscalYear), limit = '8' }) => {
-      const safeFiscalYear = clampInt(fiscalYear, 2008, currentFederalFiscalYear, defaultFederalFiscalYear)
-      const safeLimit = clampInt(limit, 1, 20, 8)
+      const safeFiscalYear = strictBoundedInteger(fiscalYear, 2008, currentFederalFiscalYear, 'Federal fiscal year')
+      const safeLimit = strictBoundedInteger(limit, 1, 20, 'Awards limit')
       return {
         filters: {
           time_period: [federalFiscalYearPeriod(safeFiscalYear)],
@@ -950,7 +967,8 @@ const importedRecommendedApis: ApiDemo[] = [
     id: 'free-dictionary', name: 'Free Dictionary', provider: 'FreeDictionaryAPI.com', category: 'Language',
     description: 'Look up English definitions, pronunciations, examples, synonyms, and antonyms.',
     documentationUrl: 'https://freedictionaryapi.com/', accent: '#7c3aed', monogram: 'DI',
-    fields: [{ id: 'word', label: 'English word', type: 'text', defaultValue: 'hello', help: 'Enter one English word.' }],
+    usageNote: 'FreeDictionaryAPI.com allows 1,000 requests/hour/IP, serves Wiktionary-derived CC BY-SA 4.0 content, and requires visible FreeDictionaryAPI.com attribution plus a link back to the original Wiktionary page supplied in the response.',
+    fields: [{ id: 'word', label: 'English word', type: 'text', defaultValue: 'hello', minLength: 1, help: 'Enter one English word or headword.' }],
     buildUrl: ({ word = 'hello' }) => `https://freedictionaryapi.com/api/v1/entries/en/${encode(word || 'hello')}`,
   },
   {
@@ -1034,10 +1052,7 @@ const importedRecommendedApis: ApiDemo[] = [
     fields: [
       limitField({ label: 'History rows', defaultValue: '52', min: 12, max: 104, help: 'Each week can include a price level and a weekly-change row.' }),
     ],
-    buildUrl: ({ limit = '52' }) => {
-      const safeLimit = clampInt(limit, 12, 104, 52)
-      return `https://api.data.gov.my/data-catalogue/?id=fuelprice&limit=${safeLimit}&sort=-date`
-    },
+    buildUrl: ({ limit = '52' }) => `https://api.data.gov.my/data-catalogue/?id=fuelprice&limit=${limit.trim()}&sort=-date`,
   },
   {
     id: 'open-meteo-marine', name: 'Marine Weather', provider: 'Open-Meteo', category: 'Weather',
@@ -1046,16 +1061,15 @@ const importedRecommendedApis: ApiDemo[] = [
     usageNote: 'Open-Meteo attribution is required. Forecasts are not suitable for coastal navigation or safety-critical decisions.',
     fields: [
       ...latLongFields(),
-      { id: 'days', label: 'Forecast days', type: 'number', defaultValue: '3', min: 1, max: 7, help: 'Return between 1 and 7 forecast days.' },
+      { id: 'days', label: 'Forecast days', type: 'number', defaultValue: '3', min: 1, max: 7, step: 1, help: 'Return between 1 and 7 whole forecast days.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', days = '3' }) => {
-      const safeDays = clampInt(days, 1, 7, 3)
       const query = new URLSearchParams({
         latitude,
         longitude,
         hourly: 'wave_height,wave_direction,wave_period,sea_surface_temperature,ocean_current_velocity,ocean_current_direction',
         timezone: 'auto',
-        forecast_days: String(safeDays),
+        forecast_days: days.trim(),
       })
       return `https://marine-api.open-meteo.com/v1/marine?${query.toString()}`
     },
@@ -1070,23 +1084,28 @@ const importedRecommendedApis: ApiDemo[] = [
         { label: 'Physics', value: 'phy' }, { label: 'Chemistry', value: 'che' }, { label: 'Physiology or Medicine', value: 'med' },
         { label: 'Literature', value: 'lit' }, { label: 'Peace', value: 'pea' }, { label: 'Economic Sciences', value: 'eco' },
       ] },
-      limitField({ label: 'Prize years', defaultValue: '6', min: 1, max: 12, help: 'Return between 1 and 12 recent prize records.' }),
+      limitField({ label: 'Prize years', defaultValue: '6', min: 1, max: 12, step: 1, help: 'Return between 1 and 12 whole recent prize records.' }),
     ],
     buildUrl: ({ category = 'phy', limit = '6' }) => {
-      const safeLimit = clampInt(limit, 1, 12, 6)
-      const query = new URLSearchParams({ nobelPrizeCategory: category || 'phy', limit: String(safeLimit), sort: 'desc' })
+      const query = new URLSearchParams({ nobelPrizeCategory: category.trim(), limit: limit.trim(), sort: 'desc' })
       return `https://api.nobelprize.org/2.1/nobelPrizes?${query.toString()}`
     },
   },
   {
-    id: 'chess-player-stats', name: 'Chess.com Player Ratings', provider: 'Chess.com', category: 'Games',
-    description: 'Compare a public player’s blitz, bullet, rapid, daily, FIDE, tactics, and match records.',
-    documentationUrl: 'https://support.chess.com/en/articles/9650547-what-is-the-pubapi-and-how-do-i-use-it', accent: '#63863c', monogram: 'CH',
-    usageNote: 'The PubAPI is read-only. Keep requests serial, respect cache headers, and avoid rapid repeated refreshes.',
+    id: 'chess-player-stats', name: 'Lichess Player Ratings', provider: 'Lichess', category: 'Games',
+    description: 'Inspect a public Lichess player’s rating, game count, rating deviation, and progress across supported chess modes.',
+    documentationUrl: 'https://lichess.org/api#tag/Users/operation/apiUser', accent: '#63863c', monogram: 'LR',
+    usageNote: 'Public read-only user endpoint. Lichess asks clients to make only one API request at a time and, after HTTP 429, wait a full minute before resuming API usage.',
+    automatedVerification: {
+      mode: 'enabled',
+      retryOnRateLimit: false,
+      reason: 'Lichess says clients receiving HTTP 429 must wait a full minute before resuming API usage; generic health verification records the first 429 and defers another provider request to a later independent run.',
+      policyUrl: 'https://lichess.org/page/api-tips',
+    },
     fields: [
-      { id: 'username', label: 'Chess.com username', type: 'text', defaultValue: 'magnuscarlsen', placeholder: 'e.g. magnuscarlsen', help: 'Enter a public Chess.com username.' },
+      { id: 'username', label: 'Lichess username', type: 'text', defaultValue: 'thibault', placeholder: 'e.g. thibault', minLength: 1, help: 'Enter one public Lichess username. The request reads only public user data.' },
     ],
-    buildUrl: ({ username = 'magnuscarlsen' }) => `https://api.chess.com/pub/player/${encode(username || 'magnuscarlsen').toLowerCase()}/stats`,
+    buildUrl: ({ username = 'thibault' }) => `https://lichess.org/api/user/${encode(username.trim().toLowerCase())}`,
   },
   {
     id: 'crossref-works', name: 'Crossref Works Search', provider: 'Crossref', category: 'Research',
@@ -1094,12 +1113,11 @@ const importedRecommendedApis: ApiDemo[] = [
     documentationUrl: 'https://www.crossref.org/documentation/retrieve-metadata/rest-api/', accent: '#4f46a5', monogram: 'CR',
     usageNote: 'Uses Crossref’s public pool without authentication. Cache results and keep request volume modest.',
     fields: [
-      queryField({ label: 'Research query', defaultValue: 'agentic AI', placeholder: 'e.g. climate adaptation', help: 'Search titles, authors, abstracts, and other Crossref metadata.' }),
-      { id: 'rows', label: 'Results', type: 'number', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 works.' },
+      queryField({ label: 'Research query', defaultValue: 'agentic AI', placeholder: 'e.g. climate adaptation', minLength: 1, help: 'Search titles, authors, abstracts, and other Crossref metadata.' }),
+      { id: 'rows', label: 'Results', type: 'number', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 whole work records.' },
     ],
     buildUrl: ({ query = 'agentic AI', rows = '8' }) => {
-      const safeRows = clampInt(rows, 1, 20, 8)
-      const params = new URLSearchParams({ query: query.trim() || 'agentic AI', rows: String(safeRows), select: 'DOI,title,author,published,publisher,is-referenced-by-count,type,URL' })
+      const params = new URLSearchParams({ query: query.trim(), rows: rows.trim(), select: 'DOI,title,author,published,publisher,is-referenced-by-count,type,URL' })
       return `https://api.crossref.org/v1/works?${params.toString()}`
     },
   },
@@ -1158,8 +1176,7 @@ const nextKeylessApis: ApiDemo[] = [
       { id: 'days', label: 'Forecast days', type: 'number', defaultValue: '7', min: 1, max: 30, step: 1, help: 'Return between 1 and 30 daily discharge values.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', days = '7' }) => {
-      const safeDays = clampInt(days, 1, 30, 7)
-      const params = new URLSearchParams({ latitude, longitude, daily: 'river_discharge,river_discharge_mean,river_discharge_max', forecast_days: String(safeDays) })
+      const params = new URLSearchParams({ latitude, longitude, daily: 'river_discharge,river_discharge_mean,river_discharge_max', forecast_days: days.trim() })
       return `https://flood-api.open-meteo.com/v1/flood?${params.toString()}`
     },
   },
@@ -1173,9 +1190,7 @@ const nextKeylessApis: ApiDemo[] = [
       { id: 'endDate', label: 'End date', type: 'date', defaultValue: '2025-01-14', minimumFromField: 'startDate', help: 'Open-Meteo requires YYYY-MM-DD; choose an end date on or after the start date.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startDate = '2025-01-01', endDate = '2025-01-14' }) => {
-      const safeStart = isIsoCalendarDate(startDate.trim()) ? startDate.trim() : '2025-01-01'
-      const safeEnd = isIsoCalendarDate(endDate.trim()) ? endDate.trim() : '2025-01-14'
-      const params = new URLSearchParams({ latitude, longitude, start_date: safeStart, end_date: safeEnd, daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone: 'auto' })
+      const params = new URLSearchParams({ latitude, longitude, start_date: startDate.trim(), end_date: endDate.trim(), daily: 'temperature_2m_max,temperature_2m_min,precipitation_sum', timezone: 'auto' })
       return `https://archive-api.open-meteo.com/v1/archive?${params.toString()}`
     },
   },
@@ -1197,12 +1212,11 @@ const nextKeylessApis: ApiDemo[] = [
     description: 'Discover public GitLab projects and compare stars, forks, activity, topics, and programming language.',
     documentationUrl: 'https://docs.gitlab.com/api/projects/', accent: '#fc6d26', monogram: 'GL',
     fields: [
-      queryField({ label: 'Project search', defaultValue: 'artificial intelligence', placeholder: 'e.g. artificial intelligence', help: 'Search public project names, paths, and descriptions.' }),
-      limitField({ label: 'Projects', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 public projects.' }),
+      queryField({ label: 'Project search', defaultValue: 'artificial intelligence', placeholder: 'e.g. artificial intelligence', minLength: 1, help: 'Search public project names, paths, and descriptions.' }),
+      limitField({ label: 'Projects', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 public projects.' }),
     ],
     buildUrl: ({ query = 'artificial intelligence', limit = '8' }) => {
-      const safeLimit = clampInt(limit, 1, 20, 8)
-      const params = new URLSearchParams({ visibility: 'public', search: query.trim() || 'artificial intelligence', order_by: 'star_count', sort: 'desc', per_page: String(safeLimit) })
+      const params = new URLSearchParams({ visibility: 'public', search: query.trim(), order_by: 'star_count', sort: 'desc', per_page: limit.trim() })
       return `https://gitlab.com/api/v4/projects?${params.toString()}`
     },
   },
@@ -1301,13 +1315,11 @@ const verifiedKeylessApis: ApiDemo[] = [
     documentationUrl: 'https://packagist.org/apidoc', accent: '#4f46e5', monogram: 'PKG',
     usageNote: 'Composer package search is anonymous and community maintained. Packagist recommends avoiding synchronized scheduled jobs, identifying API clients with a contact-bearing User-Agent, and limiting parallel requests to 10. Normal browser JavaScript cannot set User-Agent, so keep this browser demo and automated verification bounded.',
     fields: [
-      queryField({ label: 'Package search', defaultValue: 'react', placeholder: 'e.g. react', help: 'Search package names and descriptions.' }),
-      limitField({ label: 'Packages', defaultValue: '8', min: 1, max: 20, help: 'Return between 1 and 20 package records.' }),
+      queryField({ label: 'Package search', defaultValue: 'react', placeholder: 'e.g. react', minLength: 1, help: 'Search package names and descriptions.' }),
+      limitField({ label: 'Packages', defaultValue: '8', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 package records.' }),
     ],
-    buildUrl: ({ query = 'react', limit = '8' }) => {
-      const safeLimit = clampInt(limit, 1, 20, 8)
-      return `https://packagist.org/search.json?${new URLSearchParams({ q: query.trim() || 'react', per_page: String(safeLimit) }).toString()}`
-    },
+    buildUrl: ({ query = 'react', limit = '8' }) =>
+      `https://packagist.org/search.json?${new URLSearchParams({ q: query.trim(), per_page: limit.trim() }).toString()}`,
   },
   {
     id: 'nhtsa-vehicle-recalls', name: 'NHTSA Vehicle Recalls', provider: 'NHTSA', category: 'Vehicle',
@@ -1475,15 +1487,12 @@ const verifiedKeylessApis: ApiDemo[] = [
     description: 'Search Hacker News stories and comments with scoring, points, and publication data.',
     documentationUrl: 'https://hn.algolia.com/api', accent: '#ff6600', monogram: 'HN',
     fields: [
-      queryField({ label: 'Search term', defaultValue: 'OpenAI', placeholder: 'e.g. OpenAI', help: 'Search public Hacker News posts and comments.' }),
+      queryField({ label: 'Search term', defaultValue: 'OpenAI', placeholder: 'e.g. OpenAI', minLength: 1, help: 'Search public Hacker News posts and comments.' }),
       { id: 'tag', label: 'Content type', type: 'select', defaultValue: 'story', help: 'Choose stories or comments.', options: [{ label: 'Stories', value: 'story' }, { label: 'Comments', value: 'comment' }, { label: 'Stories and comments', value: '(story,comment)' }] },
-      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 search hits.' }),
+      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 search hits.' }),
     ],
-    buildUrl: ({ query = 'OpenAI', tag = 'story', limit = '6' }) => {
-      const safeLimit = clampInt(limit, 1, 20, 6)
-      const safeTag = ['story', 'comment', '(story,comment)'].includes(tag) ? tag : 'story'
-      return `https://hn.algolia.com/api/v1/search?${new URLSearchParams({ query: query.trim() || 'OpenAI', tags: safeTag, hitsPerPage: String(safeLimit) }).toString()}`
-    },
+    buildUrl: ({ query = 'OpenAI', tag = 'story', limit = '6' }) =>
+      `https://hn.algolia.com/api/v1/search?${new URLSearchParams({ query: query.trim(), tags: tag, hitsPerPage: limit.trim() }).toString()}`,
   },
   {
     id: 'bank-of-canada-valet', name: 'Bank of Canada Valet', provider: 'Bank of Canada', category: 'Finance',
@@ -1494,13 +1503,8 @@ const verifiedKeylessApis: ApiDemo[] = [
       { id: 'startDate', label: 'Start date', type: 'date', defaultValue: isoDate(daysAgo(30)), help: 'Bank of Canada Valet requires YYYY-MM-DD.' },
       { id: 'endDate', label: 'End date', type: 'date', defaultValue: today, minimumFromField: 'startDate', help: 'Bank of Canada Valet requires YYYY-MM-DD on or after the start date.' },
     ],
-    buildUrl: ({ series = 'FXUSDCAD', startDate = isoDate(daysAgo(30)), endDate = today }) => {
-      const fallbackStart = isoDate(daysAgo(30))
-      const safeSeries = /^[A-Za-z0-9_.-]+$/.test(series) ? series : 'FXUSDCAD'
-      const safeStart = isIsoCalendarDate(startDate) ? startDate : fallbackStart
-      const safeEnd = isIsoCalendarDate(endDate) ? endDate : today
-      return `https://www.bankofcanada.ca/valet/observations/${encode(safeSeries)}/json?${new URLSearchParams({ start_date: safeStart, end_date: safeEnd }).toString()}`
-    },
+    buildUrl: ({ series = 'FXUSDCAD', startDate = isoDate(daysAgo(30)), endDate = today }) =>
+      `https://www.bankofcanada.ca/valet/observations/${encode(series.trim())}/json?${new URLSearchParams({ start_date: startDate.trim(), end_date: endDate.trim() }).toString()}`,
   },
   {
     id: 'swiss-transit-connections', name: 'Swiss Transit Connections', provider: 'Swiss Mobility', category: 'Utility',
@@ -1508,14 +1512,12 @@ const verifiedKeylessApis: ApiDemo[] = [
     keywords: ['train connections', 'rail journey', 'public transport'],
     documentationUrl: 'https://transport.opendata.ch/docs.html', accent: '#009966', monogram: 'SCT',
     fields: [
-      { id: 'from', label: 'Origin', type: 'text', defaultValue: 'Zurich', placeholder: 'e.g. Zurich', help: 'Enter a station or place name.' },
-      { id: 'to', label: 'Destination', type: 'text', defaultValue: 'Geneva', placeholder: 'e.g. Geneva', help: 'Enter a destination station or place name.' },
-      limitField({ label: 'Connections', defaultValue: '6', min: 1, max: 10, help: 'Return between 1 and 10 connections.' }),
+      { id: 'from', label: 'Origin', type: 'text', defaultValue: 'Zurich', placeholder: 'e.g. Zurich', minLength: 1, help: 'Enter a station or place name.' },
+      { id: 'to', label: 'Destination', type: 'text', defaultValue: 'Geneva', placeholder: 'e.g. Geneva', minLength: 1, help: 'Enter a destination station or place name.' },
+      limitField({ label: 'Connections', defaultValue: '6', min: 1, max: 10, step: 1, help: 'Return between 1 and 10 connections.' }),
     ],
-    buildUrl: ({ from = 'Zurich', to = 'Geneva', limit = '6' }) => {
-      const safeLimit = clampInt(limit, 1, 10, 6)
-      return `https://transport.opendata.ch/v1/connections?${new URLSearchParams({ from: from.trim() || 'Zurich', to: to.trim() || 'Geneva', limit: String(safeLimit) }).toString()}`
-    },
+    buildUrl: ({ from = 'Zurich', to = 'Geneva', limit = '6' }) =>
+      `https://transport.opendata.ch/v1/connections?${new URLSearchParams({ from: from.trim(), to: to.trim(), limit: limit.trim() }).toString()}`,
   },
   {
     id: 'nasa-power-climate', name: 'NASA POWER Climate', provider: 'NASA POWER', category: 'Environment',
@@ -1526,19 +1528,20 @@ const verifiedKeylessApis: ApiDemo[] = [
       ...latLongFields(),
       { id: 'startDate', label: 'Start date', type: 'date', defaultValue: isoDate(daysAgo(30)), help: 'Choose an ISO date in YYYY-MM-DD format. Public-API converts it to NASA POWER’s YYYYMMDD wire format.' },
       { id: 'endDate', label: 'End date', type: 'date', defaultValue: today, minimumFromField: 'startDate', help: 'Choose an ISO date in YYYY-MM-DD format on or after the start date. Public-API converts it to NASA POWER’s YYYYMMDD wire format.' },
-      { id: 'parameters', label: 'Parameters', type: 'text', defaultValue: 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN', help: 'Comma-separated POWER parameter codes.' },
+      { id: 'parameters', label: 'Parameters', type: 'text', defaultValue: 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN', minLength: 1, help: 'Comma-separated POWER parameter codes.' },
     ],
     buildUrl: ({ latitude = '1.3521', longitude = '103.8198', startDate = isoDate(daysAgo(30)), endDate = today, parameters = 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN' }) => {
-      const fallbackStart = isoDate(daysAgo(30))
-      const safeStart = isIsoCalendarDate(startDate.trim()) ? startDate.trim() : fallbackStart
-      const safeEnd = isIsoCalendarDate(endDate.trim()) ? endDate.trim() : today
+      const start = startDate.trim()
+      const end = endDate.trim()
+      const providerStart = isIsoCalendarDate(start) ? start.replace(/-/g, '') : start
+      const providerEnd = isIsoCalendarDate(end) ? end.replace(/-/g, '') : end
       return `https://power.larc.nasa.gov/api/temporal/daily/point?${new URLSearchParams({
-        parameters: parameters.trim() || 'T2M,PRECTOTCORR,WS10M,RH2M,ALLSKY_SFC_SW_DWN',
+        parameters: parameters.trim(),
         community: 'AG',
         latitude,
         longitude,
-        start: safeStart.replace(/-/g, ''),
-        end: safeEnd.replace(/-/g, ''),
+        start: providerStart,
+        end: providerEnd,
         format: 'JSON',
       }).toString()}`
     },
@@ -1613,8 +1616,8 @@ const verifiedKeylessApis: ApiDemo[] = [
     id: 'wiktionary-entry', name: 'Wiktionary Definitions', provider: 'Wikimedia Foundation', category: 'Language',
     description: 'Look up structured English definitions, parts of speech, examples, related words, and language information.',
     documentationUrl: 'https://en.wiktionary.org/api/rest_v1/', accent: '#7c3aed', monogram: 'WK',
-    fields: [{ id: 'word', label: 'English word', type: 'text', defaultValue: 'hello', placeholder: 'e.g. serendipity', help: 'Enter one English Wiktionary headword.' }],
-    buildUrl: ({ word = 'hello' }) => `https://en.wiktionary.org/api/rest_v1/page/definition/${encode(word || 'hello')}`,
+    fields: [{ id: 'word', label: 'English word', type: 'text', defaultValue: 'hello', placeholder: 'e.g. serendipity', minLength: 1, help: 'Enter one English Wiktionary headword.' }],
+    buildUrl: ({ word = 'hello' }) => `https://en.wiktionary.org/api/rest_v1/page/definition/${encode(word)}`,
   },
   {
     id: 'animechan-random-quote', name: 'Anime Quote Generator', provider: 'AnimeChan', category: 'Entertainment',
@@ -1663,7 +1666,7 @@ const verifiedKeylessApis: ApiDemo[] = [
       patternDescription: 'must contain exactly eight digits, optionally formatted as 12345-678.',
       help: 'Enter exactly eight digits, with or without a hyphen.',
     }],
-    buildUrl: ({ postcode = '01310930' }) => `https://brasilapi.com.br/api/cep/v2/${encode((postcode || '01310930').replace(/\D/g, ''))}`,
+    buildUrl: ({ postcode = '01310930' }) => `https://brasilapi.com.br/api/cep/v2/${encode(postcode.trim().replace('-', ''))}`,
   },
   {
     id: 'poetrydb-poems', name: 'PoetryDB Reader', provider: 'PoetryDB', category: 'Books',
@@ -1707,33 +1710,24 @@ const verifiedKeylessApis: ApiDemo[] = [
     description: 'Track Malaysia’s monthly overall core consumer price index, with index level and reporting month kept explicit.',
     documentationUrl: 'https://data.gov.my/data-catalogue/cpi_core', accent: '#0284c7', monogram: 'MCC', risk: 'Review',
     usageNote: 'DOSM defines this as a monthly CPI index with base 2010 = 100, not an inflation percentage. Core CPI excludes volatile-price or government-administered items. The demo filters division=overall and retains CC BY 4.0 attribution.',
-    fields: [limitField({ label: 'Months', defaultValue: '12', min: 6, max: 60, help: 'Return between 6 and 60 monthly overall-index observations.' })],
-    buildUrl: ({ limit = '12' }) => {
-      const safeLimit = clampInt(limit, 6, 60, 12)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'cpi_core', filter: 'overall@division', limit: String(safeLimit), sort: '-date' }).toString()}`
-    },
+    fields: [limitField({ label: 'Months', defaultValue: '12', min: 6, max: 60, step: 1, help: 'Return between 6 and 60 monthly overall-index observations.' })],
+    buildUrl: ({ limit = '12' }) => `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'cpi_core', filter: 'overall@division', limit: limit.trim(), sort: '-date' }).toString()}`,
   },
   {
     id: 'malaysia-household-income', name: 'Malaysia Household Income', provider: 'data.gov.my', category: 'Economy',
     description: 'Compare Malaysia mean and median nominal gross monthly household income across published HIES survey observations.',
     documentationUrl: 'https://data.gov.my/data-catalogue/hh_income', accent: '#0369a1', monogram: 'MHI', risk: 'Review',
     usageNote: 'DOSM publishes nominal RM values that are not inflation-adjusted. HIES observations are survey years, not a complete consecutive annual series.',
-    fields: [limitField({ label: 'Survey observations', defaultValue: '10', min: 6, max: 30, help: 'Return between 6 and 30 published HIES observations.' })],
-    buildUrl: ({ limit = '10' }) => {
-      const safeLimit = clampInt(limit, 6, 30, 10)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'hh_income', limit: String(safeLimit), sort: '-date' }).toString()}`
-    },
+    fields: [limitField({ label: 'Survey observations', defaultValue: '10', min: 6, max: 30, step: 1, help: 'Return between 6 and 30 published HIES observations.' })],
+    buildUrl: ({ limit = '10' }) => `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'hh_income', limit: limit.trim(), sort: '-date' }).toString()}`,
   },
   {
     id: 'malaysia-population', name: 'Malaysia Population', provider: 'data.gov.my', category: 'Economy',
     description: 'Track Malaysia national total population by year using both sexes, all ages, and all ethnicities.',
     documentationUrl: 'https://data.gov.my/data-catalogue/population_malaysia', accent: '#0ea5e9', monogram: 'MPO', risk: 'Review',
     usageNote: "DOSM publishes population in thousands of people ('000). This demo filters all demographic dimensions to their overall totals so each row is one national yearly observation.",
-    fields: [limitField({ label: 'Years', defaultValue: '10', min: 6, max: 57, help: 'Return between 6 and 57 annual national-total observations.' })],
-    buildUrl: ({ limit = '10' }) => {
-      const safeLimit = clampInt(limit, 6, 57, 10)
-      return `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'population_malaysia', filter: 'both@sex,overall@age,overall@ethnicity', limit: String(safeLimit), sort: '-date' }).toString()}`
-    },
+    fields: [limitField({ label: 'Years', defaultValue: '10', min: 6, max: 57, step: 1, help: 'Return between 6 and 57 annual national-total observations.' })],
+    buildUrl: ({ limit = '10' }) => `https://api.data.gov.my/data-catalogue/?${new URLSearchParams({ id: 'population_malaysia', filter: 'both@sex,overall@age,overall@ethnicity', limit: limit.trim(), sort: '-date' }).toString()}`,
   },
   {
     id: 'openfda-food-recalls', name: 'openFDA Food Recalls', provider: 'U.S. FDA', category: 'Food',
@@ -2120,20 +2114,22 @@ const verifiedSecondExpansionApis: ApiDemo[] = [
     id: 'dnd5e-spell-lookup', name: 'D&D 5e Spell Lookup', provider: 'D&D 5e API', category: 'Games',
     description: 'Look up a Dungeons & Dragons 5th edition spell with range, components, and effect description.',
     documentationUrl: 'https://www.dnd5eapi.co/docs/', accent: '#7c2d12', monogram: 'DND',
-    fields: [{ id: 'spellIndex', label: 'Spell', type: 'text', defaultValue: 'fireball', placeholder: 'e.g. fireball', help: 'Enter a spell slug using lowercase and hyphens (e.g. magic-missile).' }],
-    buildUrl: ({ spellIndex = 'fireball' }) => `https://www.dnd5eapi.co/api/2014/spells/${encode(spellIndex || 'fireball').toLowerCase()}`,
+    fields: [{ id: 'spellIndex', label: 'Spell', type: 'text', defaultValue: 'fireball', minLength: 1, maxLength: 80, pattern: '[a-z0-9]+(?:-[a-z0-9]+)*', patternDescription: 'must be a lowercase D&D 5e resource slug using letters, numbers, and single hyphens.', placeholder: 'e.g. fireball', help: 'Enter the exact 2014 spell resource slug, such as magic-missile.' }],
+    buildUrl: ({ spellIndex = 'fireball' }) => `https://www.dnd5eapi.co/api/2014/spells/${encode(spellIndex)}`,
   },
   {
     id: 'qr-code-generator', name: 'QR Code Generator', provider: 'goQR.me', category: 'Utility',
     description: 'Generate a scannable QR code image for any text or URL, entirely from a GET request.',
     documentationUrl: 'https://goqr.me/api/', accent: '#111827', monogram: 'QR',
-    usageNote: 'The response body is a binary PNG image, not JSON; the raw response tab shows a placeholder summary instead.',
+    usageNote: 'The response body is a binary PNG image, not JSON; the Response details tab shows a metadata summary instead.',
     fields: [
       { id: 'data', label: 'Text or URL', type: 'text', defaultValue: 'https://example.com', placeholder: 'e.g. https://example.com', help: 'Enter the text or URL to encode.' },
       { id: 'size', label: 'Image size', type: 'select', defaultValue: '200x200', help: 'Choose the output image dimensions.', options: [{ label: '150 × 150', value: '150x150' }, { label: '200 × 200', value: '200x200' }, { label: '300 × 300', value: '300x300' }] },
     ],
+    headers: { Accept: 'image/png' },
     buildUrl: ({ data = 'https://example.com', size = '200x200' }) => `https://api.qrserver.com/v1/create-qr-code/?${new URLSearchParams({ data: data.trim() || 'https://example.com', size: size || '200x200' }).toString()}`,
-    parseResponse: (text) => ({ note: 'Binary PNG image response — see the rendered QR code below.', approximateBytes: text.length }),
+    responseType: 'image',
+    responseContentTypes: ['image/png'],
   },
   {
     id: 'where-the-iss-at', name: 'Where The ISS At', provider: 'Where The ISS At', category: 'Geo',
@@ -2421,8 +2417,10 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
       ] },
       { id: 'seed', label: 'Seed text', type: 'text', defaultValue: 'test', placeholder: 'e.g. test', help: 'Any text seed deterministically generates the same avatar.' },
     ],
+    headers: { Accept: 'image/svg+xml' },
     buildUrl: ({ style = 'identicon', seed = 'test' }) => `https://api.dicebear.com/9.x/${encode(style || 'identicon')}/svg?${new URLSearchParams({ seed: seed.trim() || 'test' }).toString()}`,
-    parseResponse: (text) => ({ note: 'Raw SVG image response — see the rendered avatar below.', approximateBytes: text.length }),
+    responseType: 'image',
+    responseContentTypes: ['image/svg+xml'],
   },
   {
     id: 'catfacts', name: 'Cat Facts Generator', provider: 'Cat Facts API', category: 'Nature',
@@ -2678,6 +2676,8 @@ const verifiedThirdExpansionApis: ApiDemo[] = [
       const modulePath = encode(escapeGoProxyModulePath(requestedModule)).replace(/%2F/g, '/')
       return `https://proxy.golang.org/${modulePath}/@v/list`
     },
+    responseType: 'text',
+    responseContentTypes: ['text/plain'],
     parseResponse: (text) => ({ versions: text.split(/\r?\n/).map((version) => version.trim()).filter(Boolean) }),
   },
   {
@@ -2872,10 +2872,10 @@ ORDER BY ?publ ?authorName`
     description: 'Search Canada’s open-government dataset and publication catalogue through its CKAN API.',
     documentationUrl: 'https://open.canada.ca/en/access-our-application-programming-interface-api', accent: '#d52b1e', monogram: 'CAN',
     fields: [
-      queryField({ label: 'Catalogue search', defaultValue: 'artificial intelligence', placeholder: 'e.g. artificial intelligence', help: 'Search Canadian datasets and publications by keyword.' }),
-      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 catalogue records.' }),
+      queryField({ label: 'Catalogue search', defaultValue: 'artificial intelligence', placeholder: 'e.g. artificial intelligence', minLength: 1, help: 'Search Canadian datasets and publications by keyword.' }),
+      limitField({ label: 'Results', defaultValue: '6', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 catalogue records.' }),
     ],
-    buildUrl: ({ query = 'artificial intelligence', limit = '6' }) => `https://open.canada.ca/data/api/3/action/package_search?${new URLSearchParams({ q: query.trim() || 'artificial intelligence', rows: String(clampInt(limit, 1, 20, 6)) }).toString()}`,
+    buildUrl: ({ query = 'artificial intelligence', limit = '6' }) => `https://open.canada.ca/data/api/3/action/package_search?${new URLSearchParams({ q: query.trim(), rows: limit.trim() }).toString()}`,
   },
   {
     id: 'gbif-occurrence-search', name: 'GBIF Occurrence Search', provider: 'GBIF', category: 'Biodiversity',
@@ -2883,10 +2883,10 @@ ORDER BY ?publ ?authorName`
     documentationUrl: 'https://techdocs.gbif.org/en/openapi/v1/occurrence', accent: '#65a30d', monogram: 'GBO',
     usageNote: 'Occurrence records come from many publishers with varying licences and data quality. Treat locations and identifications as source data rather than authoritative ground truth.',
     fields: [
-      { id: 'scientificName', label: 'Scientific name', type: 'text', defaultValue: 'Panthera leo', placeholder: 'e.g. Panthera leo', help: 'Use a scientific species or taxon name.' },
-      limitField({ label: 'Records', defaultValue: '6', min: 1, max: 20, help: 'Return between 1 and 20 occurrence records.' }),
+      { id: 'scientificName', label: 'Scientific name', type: 'text', defaultValue: 'Panthera leo', placeholder: 'e.g. Panthera leo', minLength: 1, help: 'Use a scientific species or taxon name.' },
+      limitField({ label: 'Records', defaultValue: '6', min: 1, max: 20, step: 1, help: 'Return between 1 and 20 occurrence records.' }),
     ],
-    buildUrl: ({ scientificName = 'Panthera leo', limit = '6' }) => `https://api.gbif.org/v1/occurrence/search?${new URLSearchParams({ scientificName: scientificName.trim() || 'Panthera leo', limit: String(clampInt(limit, 1, 20, 6)), hasCoordinate: 'true' }).toString()}`,
+    buildUrl: ({ scientificName = 'Panthera leo', limit = '6' }) => `https://api.gbif.org/v1/occurrence/search?${new URLSearchParams({ scientificName: scientificName.trim(), limit: limit.trim(), hasCoordinate: 'true' }).toString()}`,
   },
 
   {
@@ -2899,9 +2899,9 @@ ORDER BY ?publ ?authorName`
       { id: 'variable', label: 'Forecast variable', type: 'select', defaultValue: 'temperature_2m', help: 'Choose the hourly quantity to compare across ensemble members.', options: [
         { label: 'Temperature · 2 m', value: 'temperature_2m' }, { label: 'Precipitation', value: 'precipitation' }, { label: 'Wind speed · 10 m', value: 'wind_speed_10m' },
       ] },
-      { id: 'forecastDays', label: 'Forecast days', type: 'number', defaultValue: '3', min: 1, max: 7, help: 'Request between 1 and 7 forecast days.' },
+      { id: 'forecastDays', label: 'Forecast days', type: 'number', defaultValue: '3', min: 1, max: 7, step: 1, help: 'Request between 1 and 7 whole forecast days.' },
     ],
-    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', variable = 'temperature_2m', forecastDays = '3' }) => `https://ensemble-api.open-meteo.com/v1/ensemble?${new URLSearchParams({ latitude, longitude, models: 'icon_seamless_eps', hourly: variable, forecast_days: String(clampInt(forecastDays, 1, 7, 3)), timezone: 'Asia/Singapore' }).toString()}`,
+    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', variable = 'temperature_2m', forecastDays = '3' }) => `https://ensemble-api.open-meteo.com/v1/ensemble?${new URLSearchParams({ latitude, longitude, models: 'icon_seamless_eps', hourly: variable, forecast_days: forecastDays.trim(), timezone: 'Asia/Singapore' }).toString()}`,
   },
   {
     id: 'world-bank-indicator-explorer', name: 'World Bank Indicator Explorer', provider: 'World Bank', category: 'Economy',
@@ -2963,9 +2963,9 @@ const curatedFiveApiExpansionApis: ApiDemo[] = [
     usageNote: 'Seasonal data are coarse-resolution ensemble area forecasts and are not bias-corrected. The provider input is a forecast-day horizon, while weekly products are calendar-aligned: a 42-day horizon can intersect seven labelled weekly buckets because the first or final bucket may be partial. Do not interpret returned bucket count as an exact number of requested weeks.',
     fields: [
       ...latLongFields(),
-      numberField('forecastDays', { label: 'Forecast horizon (days)', defaultValue: '42', min: 1, max: 46, help: 'Request 1–46 forecast days of EC46 weekly products. Calendar-aligned weekly buckets can include partial boundary weeks, so their count may differ from forecast days divided by seven.' }),
+      numberField('forecastDays', { label: 'Forecast horizon (days)', defaultValue: '42', min: 1, max: 46, step: 1, help: 'Request 1–46 whole forecast days of EC46 weekly products. Calendar-aligned weekly buckets can include partial boundary weeks, so their count may differ from forecast days divided by seven.' }),
     ],
-    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', forecastDays = '42' }) => `https://seasonal-api.open-meteo.com/v1/seasonal?${new URLSearchParams({ latitude, longitude, weekly: 'temperature_2m_mean,temperature_2m_anomaly,precipitation_mean,precipitation_anomaly', forecast_days: String(clampInt(forecastDays, 1, 46, 42)), timezone: 'Asia/Singapore' }).toString()}`,
+    buildUrl: ({ latitude = '1.3521', longitude = '103.8198', forecastDays = '42' }) => `https://seasonal-api.open-meteo.com/v1/seasonal?${new URLSearchParams({ latitude, longitude, weekly: 'temperature_2m_mean,temperature_2m_anomaly,precipitation_mean,precipitation_anomaly', forecast_days: forecastDays.trim(), timezone: 'Asia/Singapore' }).toString()}`,
   },
   {
     id: 'nhtsa-safety-ratings', name: 'NHTSA Safety Ratings', provider: 'NHTSA', category: 'Vehicle',

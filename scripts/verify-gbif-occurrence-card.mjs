@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const report = { origin: 'https://yapweijun1996.github.io', publication: 'unpublished local app bundle under the real GitHub Pages origin', scope: 'GBIF request/pagination/coordinate semantics, mobile, accessibility', checks: [], errors: [] }
 const unnamed = (nodes) => nodes.filter((node) => !node.ignored && ['button','combobox','textbox','spinbutton','searchbox','tab','radio','link'].includes(node.role?.value) && !(node.name?.value || '').trim())
+const setControl = async (b, name, value) => {
+  await b.ev(`(() => {
+    const element = document.querySelector('[name=${JSON.stringify(name)}]')
+    if (!element) throw new Error('Missing control ' + ${JSON.stringify(name)})
+    const prototype = element.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, ${JSON.stringify(value)})
+    element.dispatchEvent(new Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+  })()`)
+  await sleep(80)
+}
 const endpointContract = (endpoint) => {
   const url = new URL(endpoint)
   assert.equal(url.protocol, 'https:'); assert.equal(url.hostname, 'api.gbif.org'); assert.equal(url.pathname, '/v1/occurrence/search')
@@ -19,6 +29,24 @@ const canonical = (rows,overrides={}) => ({ offset:0, limit:6, endOfRecords:rows
 let active
 try {
   active = await browser(`${root}/dist`); await active.nav('gbif-occurrence-search')
+  const fieldContract = await active.ev(`(() => {
+    const name = document.querySelector('[name="scientificName"]')
+    const limit = document.querySelector('[name="limit"]')
+    return { nameMinLength: name?.minLength, limitMin: limit?.min, limitMax: limit?.max, limitStep: limit?.step }
+  })()`); assert.deepEqual(fieldContract,{nameMinLength:1,limitMin:'1',limitMax:'20',limitStep:'1'})
+
+  await setControl(active,'scientificName','   '); await setControl(active,'limit','6')
+  const blankBefore=active.requestCount; await active.ev(`document.querySelector('.parameter-card').requestSubmit()`); await sleep(180)
+  const blankValidation=await active.ev(`(() => { const field=document.querySelector('[name="scientificName"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-scientificName-help')?.textContent||''} })()`)
+  assert.equal(active.requestCount-blankBefore,0,'Blank GBIF scientificName must not trigger a provider request'); assert.equal(blankValidation.state,'idle'); assert.equal(blankValidation.invalid,'true'); assert.match(blankValidation.help,/Scientific name is required\./)
+
+  await setControl(active,'scientificName','Panthera leo'); await setControl(active,'limit','6.5')
+  const fractionalBefore=active.requestCount; await active.ev(`document.querySelector('.parameter-card').requestSubmit()`); await sleep(180)
+  const fractionalValidation=await active.ev(`(() => { const field=document.querySelector('[name="limit"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-limit-help')?.textContent||''} })()`)
+  assert.equal(active.requestCount-fractionalBefore,0,'Fractional GBIF limit must not trigger a provider request'); assert.equal(fractionalValidation.state,'idle'); assert.equal(fractionalValidation.invalid,'true'); assert.match(fractionalValidation.help,/Records must use increments of 1\./)
+  report.checks.push({case:'invalid explicit input',scientificNameMinLength:1,limitStep:1,blankScientificNameProviderRequests:0,fractionalLimitProviderRequests:0,sharedValidation:'fail-closed'})
+
+  await setControl(active,'limit','6')
   const endpoint = await active.ev(`document.querySelector('.endpoint-box code')?.textContent || ''`); const contract = endpointContract(endpoint)
   const before = active.requestCount; const result = await active.run(); assert.equal(result.ok,true,result.error); assert.equal(active.requestCount-before,1)
   const payload=result.data; assert(payload && typeof payload==='object' && !Array.isArray(payload)); assert.equal(payload.offset,0); assert.equal(payload.limit,contract.limit); assert.equal(typeof payload.endOfRecords,'boolean'); assert(Number.isSafeInteger(payload.count)&&payload.count>=0); assert(Array.isArray(payload.results)); assert.equal(payload.results.length,Math.min(contract.limit,payload.count)); assert.equal(payload.endOfRecords,payload.count<=contract.limit)

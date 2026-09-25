@@ -39,6 +39,11 @@ describe('machine-readable API catalog', () => {
     const nvdCves = catalog.apis.find((api) => api.id === 'nvd-cves')
     const internetArchive = catalog.apis.find((api) => api.id === 'internet-archive-search')
     const dogs = catalog.apis.find((api) => api.id === 'dogs')
+    const qr = catalog.apis.find((api) => api.id === 'qr-code-generator')
+    const goModule = catalog.apis.find((api) => api.id === 'go-module-proxy')
+    const npmSearch = catalog.apis.find((api) => api.id === 'npm-search')
+    const usaspending = catalog.apis.find((api) => api.id === 'usaspending')
+    const crossrefWorks = catalog.apis.find((api) => api.id === 'crossref-works')
 
     expect(languageTool).toMatchObject({
       method: 'POST',
@@ -58,6 +63,29 @@ describe('machine-readable API catalog', () => {
     expect(dogs?.parameters).toEqual([
       expect.objectContaining({ id: 'count', type: 'number', min: 1, max: 10, step: 1 }),
     ])
+    expect(dogs?.responseType).toBe('json')
+    expect(dogs?.responseContentTypes).toBeUndefined()
+    expect(qr?.responseType).toBe('image')
+    expect(qr?.responseContentTypes).toEqual(['image/png'])
+    expect(goModule?.responseType).toBe('text')
+    expect(goModule?.responseContentTypes).toEqual(['text/plain'])
+    expect(npmSearch?.parameters).toEqual([
+      expect.objectContaining({ id: 'query', type: 'text', minLength: 1 }),
+      expect.objectContaining({ id: 'limit', type: 'number', min: 1, max: 20, step: 1 }),
+    ])
+    expect(usaspending?.parameters).toEqual([
+      expect.objectContaining({ id: 'fiscalYear', type: 'number', min: 2008, step: 1 }),
+      expect.objectContaining({ id: 'limit', type: 'number', min: 1, max: 20, step: 1 }),
+    ])
+    expect(crossrefWorks?.parameters).toEqual([
+      expect.objectContaining({ id: 'query', type: 'text', minLength: 1 }),
+      expect.objectContaining({ id: 'rows', type: 'number', min: 1, max: 20, step: 1 }),
+    ])
+    expect(stackExchange?.parameters).toEqual([
+      expect.objectContaining({ id: 'tags', type: 'text', minLength: 1, maxLength: 200, pattern: '[^;]+(?:;[^;]+){0,4}' }),
+      expect.objectContaining({ id: 'limit', type: 'number', min: 1, max: 20, step: 1 }),
+    ])
+    expect(catalog.apis.every((api) => ['json', 'text', 'image'].includes(api.responseType))).toBe(true)
     expect(color?.agentExecution).toEqual({ mode: 'enabled' })
     expect(color?.automatedVerification).toBeUndefined()
     expect(celestrak?.automatedVerification).toMatchObject({
@@ -85,11 +113,11 @@ describe('machine-readable API catalog', () => {
     }))
     expect(nvdCpe?.parameters).toEqual([
       expect.objectContaining({ id: 'query', type: 'text', defaultValue: 'openssl', minLength: 1 }),
-      expect.objectContaining({ id: 'limit', type: 'number', defaultValue: '8', min: 1, max: 20 }),
+      expect.objectContaining({ id: 'limit', type: 'number', defaultValue: '8', min: 1, max: 20, step: 1 }),
     ])
     expect(nvdCves?.parameters).toEqual([
       expect.objectContaining({ id: 'query', type: 'text', defaultValue: 'postgresql', minLength: 1, maxLength: 100 }),
-      expect.objectContaining({ id: 'limit', type: 'number', defaultValue: '8', min: 1, max: 20 }),
+      expect.objectContaining({ id: 'limit', type: 'number', defaultValue: '8', min: 1, max: 20, step: 1 }),
     ])
     expect(openAlex?.automatedVerification).toMatchObject({
       mode: 'enabled',
@@ -168,6 +196,7 @@ describe('machine-readable API catalog', () => {
     const openMeteoClimate = catalog.apis.find((api) => api.id === 'open-meteo-climate')
     const openMeteoHistory = catalog.apis.find((api) => api.id === 'open-meteo-history')
     const openMeteoSeasonal = catalog.apis.find((api) => api.id === 'open-meteo-seasonal')
+    const nasaPower = catalog.apis.find((api) => api.id === 'nasa-power-climate')
     const nhtsa = catalog.apis.find((api) => api.id === 'nhtsa-safety-ratings')
     const countries = catalog.apis.find((api) => api.id === 'countries')
     const worldBankIndicator = catalog.apis.find((api) => api.id === 'world-bank-indicator-explorer')
@@ -195,8 +224,9 @@ describe('machine-readable API catalog', () => {
       pattern: '[A-Za-z]{3}(?:\\s*,\\s*[A-Za-z]{3})*',
       patternDescription: 'must be a comma-separated list of three-letter currency codes.',
     })
+    expect(nasaPower?.parameters.find((field) => field.id === 'parameters')).toMatchObject({ type: 'text', minLength: 1 })
     expect(openMeteoSeasonal?.parameters.map((field) => field.id)).toEqual(['latitude', 'longitude', 'forecastDays'])
-    expect(openMeteoSeasonal?.parameters.find((field) => field.id === 'forecastDays')).toMatchObject({ type: 'number', defaultValue: '42', min: 1, max: 46 })
+    expect(openMeteoSeasonal?.parameters.find((field) => field.id === 'forecastDays')).toMatchObject({ type: 'number', defaultValue: '42', min: 1, max: 46, step: 1 })
     expect(nhtsa?.parameters.find((field) => field.id === 'vehicleId')).toMatchObject({
       type: 'text', defaultValue: '19426', minLength: 1, maxLength: 6,
       pattern: '[1-9][0-9]{0,5}',

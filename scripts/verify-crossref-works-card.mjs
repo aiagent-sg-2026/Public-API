@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const query = 'agentic AI'
 const rows = 8
@@ -12,7 +12,7 @@ const endpoint = `https://api.crossref.org/v1/works?${new URLSearchParams({
 const report = {
   origin: 'https://yapweijun1996.github.io',
   publication: 'unpublished local app bundle under the real GitHub Pages origin',
-  source: 'one live Crossref v1 works search plus exact synthetic HTTP-200 semantic fixtures',
+  source: 'native exact-input validation, one live Crossref v1 works search, plus exact synthetic HTTP-200 semantic fixtures',
   checks: [],
   errors: [],
 }
@@ -24,6 +24,54 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('crossref-works')
+  const fieldContract = await b.ev(`(() => {
+    const query = document.querySelector('#parameter-query')
+    const rows = document.querySelector('#parameter-rows')
+    return {
+      queryMinLength: query?.getAttribute('minlength') || '',
+      rowsMin: rows?.getAttribute('min') || '', rowsMax: rows?.getAttribute('max') || '', rowsStep: rows?.getAttribute('step') || '',
+    }
+  })()`)
+  assert.deepEqual(fieldContract, { queryMinLength: '1', rowsMin: '1', rowsMax: '20', rowsStep: '1' })
+  const beforeInvalidInput = b.requestCount
+  await b.ev(`(() => {
+    const input = document.querySelector('#parameter-query')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '   ')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await b.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeInvalidInput, 'Blank Crossref research query reached a provider request')
+  const blankQueryError = await b.ev(`(() => { const input = document.querySelector('#parameter-query'); const help = document.querySelector('#parameter-query-help'); return { invalid: input?.getAttribute('aria-invalid') || '', text: help?.textContent || '' } })()`)
+  assert.equal(blankQueryError.invalid, 'true')
+  assert.match(blankQueryError.text, /required/i)
+  await b.ev(`(() => {
+    const query = document.querySelector('#parameter-query')
+    const rows = document.querySelector('#parameter-rows')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(query, 'agentic AI')
+    query.dispatchEvent(new Event('input', { bubbles: true }))
+    query.dispatchEvent(new Event('change', { bubbles: true }))
+    setter.call(rows, '8.5')
+    rows.dispatchEvent(new Event('input', { bubbles: true }))
+    rows.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  const fractionalRows = await b.ev(`(() => { const input = document.querySelector('#parameter-rows'); return { valid: input.checkValidity(), stepMismatch: input.validity.stepMismatch } })()`)
+  assert.deepEqual(fractionalRows, { valid: false, stepMismatch: true })
+  await b.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeInvalidInput, 'Fractional Crossref result count reached a provider request')
+  await b.ev(`(() => {
+    const rows = document.querySelector('#parameter-rows')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(rows, '8')
+    rows.dispatchEvent(new Event('input', { bubbles: true }))
+    rows.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await sleep(100)
+  report.checks.push({ id: 'crossref-works', case: 'native exact-input contract', queryMinLength: 1, rowsMin: 1, rowsMax: 20, rowsStep: 1, blankQueryRejected: true, fractionalRowsRejected: true, providerRequests: 0 })
   const result = await b.run()
   assert.equal(result.ok, true, result.error)
   const displayedEndpoint = await b.ev(`document.querySelector('.endpoint-box code')?.textContent || ''`)

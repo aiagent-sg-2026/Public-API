@@ -83,6 +83,25 @@ let live
 try {
   live = await browser(`${root}/dist`)
   await live.nav('open-meteo-ensemble')
+  const fieldContract = await live.ev(`(() => {
+    const input = document.querySelector('input[name="forecastDays"]');
+    return { min: input?.min, max: input?.max, step: input?.step };
+  })()`);
+  assert.deepEqual(fieldContract, { min: '1', max: '7', step: '1' })
+  const requestsBeforeFractional = live.requestCount
+  await setForecastDays(live, '3.5')
+  await live.ev(`document.querySelector('form.parameter-card')?.requestSubmit()`);
+  await live.wait(`document.querySelector('input[name="forecastDays"]')?.getAttribute('aria-invalid') === 'true'`)
+  await sleep(120)
+  assert.equal(live.requestCount, requestsBeforeFractional, 'Fractional forecastDays reached the provider')
+  assert.equal(await live.ev(`document.querySelector('.request-lab')?.dataset.requestState`), 'idle')
+  report.checks.push({
+    id: 'open-meteo-ensemble',
+    case: 'fractional forecast-day input rejected before provider execution',
+    fieldContract,
+    invalidValue: '3.5',
+    providerRequests: 0,
+  })
   await setForecastDays(live, '1')
   const endpoint = await live.ev(`document.querySelector('.endpoint-box code')?.textContent || ''`)
   assert.equal(endpoint, expectedEndpoint)

@@ -32,7 +32,7 @@ All important product surfaces should derive from the same API registry and sema
 
 ### Human UI
 
-The catalog and Request Lab remain responsive, keyboard-friendly developer experiences. Charts, maps, galleries, tables, timelines, semantic cards, Raw JSON, and fetch code are optimized for human comprehension.
+The catalog and Request Lab remain responsive, keyboard-friendly developer experiences. Charts, maps, galleries, tables, timelines, semantic cards, source-appropriate response details (Raw JSON for JSON APIs), and fetch code are optimized for human comprehension.
 
 ### Agent-readable Web UI
 
@@ -183,7 +183,7 @@ The normal DOM/accessibility tree must remain sufficient to discover and operate
 
 The build emits `/api-catalog.json` from the same `apiCatalog` registry used by the UI and WebMCP. It is never hand-maintained. The document head advertises it with an `application/json` alternate link, and Agent Tools exposes an ordinary accessible link so agents without WebMCP can discover it from the page. The development server serves the same generated representation.
 
-The versioned artifact exposes bounded, stable facts that exist in the SSOT: ID, name, provider, category, description, documentation URL, HTTP method, key requirement, deterministic Request Lab URL, parameter schema/options, provider usage notes, and `agentExecution`. It deliberately omits executable request-builder functions and current-health claims. Until durable health telemetry exists, the artifact reports `health: "not-included"` rather than turning a build snapshot into fake live verification.
+The versioned artifact exposes bounded, stable facts that exist in the SSOT: ID, name, provider, category, description, documentation URL, HTTP method, key requirement, the resolved response transport (`json`, `text`, or `image`), deterministic Request Lab URL, parameter schema/options, provider usage notes, and `agentExecution`. It deliberately omits executable request-builder functions and current-health claims. Until durable health telemetry exists, the artifact reports `health: "not-included"` rather than turning a build snapshot into fake live verification.
 
 ### Deterministic Request Lab deep links
 
@@ -209,7 +209,7 @@ The current bounded foundation localizes primary operational chrome plus the fix
 
 ## Machine-readable health and errors
 
-Error states should distinguish provider unavailable, 429/rate limit, browser CORS rejection, timeout, invalid response/parser drift, and validation failure. An HTTP-success status is not sufficient evidence of a valid API result: APIs whose contract is JSON must fail closed as `invalid-response` when the body cannot be parsed as JSON, while intentionally non-JSON APIs must opt into an explicit response parser. HTTP error classification happens before custom parsing so a provider 429/5xx response cannot be masked by parser behavior.
+Error states should distinguish provider unavailable, 429/rate limit, browser CORS rejection, timeout, invalid response/parser drift, and validation failure. An HTTP-success status is not sufficient evidence of a valid API result: APIs whose contract is JSON must fail closed as `invalid-response` when the body cannot be parsed as JSON, while intentionally non-JSON APIs must declare both their response transport and accepted response media types in the API SSOT. The shared runtime normalizes `Content-Type` parameters/case and rejects a successful response whose declared non-JSON media type is missing or mismatched before parsing/rendering; generated Fetch code, Agent-readable DOM, machine catalog, and WebMCP discovery expose the same contract. HTTP error classification happens before transport validation or custom parsing so a provider 429/5xx response cannot be masked by parser behavior.
 A documented successful no-content status is a provider-specific exception, not a global parser relaxation. If an admitted provider explicitly defines a 2xx status such as HTTP 204 as “nothing found,” the API SSOT may map only that declared status plus an actually empty body to the domain's semantic empty value. Ordinary JSON APIs and undeclared empty 2xx responses remain `invalid-response`. Human Request Lab, copied fetch code, and structured-agent execution must consume the same declaration.
 
 API-owned semantic adapters apply the same rule after transport parsing. When a provider has a known response schema, the adapter must not recover missing business fields through broad recursive searches or plausible `Live`/zero placeholders. The semantic root should expose an explicit agent-readable result state such as `ready`, `partial`, `empty`, or `invalid`; partial responses keep missing measurements visibly unavailable, while a structurally unusable HTTP-2xx body fails semantically closed. Browser regression evidence should compare live provider fields to semantic DOM and separately prove that a malformed HTTP-success fixture does not become a plausible domain result. For request-sensitive semantics, adapters must bind against the successful run's executed request context rather than mutable current-form state; POST filters in the serialized request body are first-class semantic identity and must remain available to the response adapter.

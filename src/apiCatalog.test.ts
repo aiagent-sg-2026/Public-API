@@ -38,6 +38,56 @@ describe('API catalog', () => {
     }
   })
 
+  it('keeps JSONPlaceholder post identity integer-valued without silently truncating invalid input', () => {
+    const posts = getApiById('posts')
+    expect(posts).toBeDefined()
+    if (!posts) return
+
+    expect(posts.fields.find((field) => field.id === 'postId')).toMatchObject({
+      type: 'number',
+      min: 1,
+      max: 100,
+      step: 1,
+    })
+    expect(validateParameters(posts, { postId: '7.5' })).toEqual({
+      postId: 'Post ID must use increments of 1.',
+    })
+    expect(posts.buildUrl({ postId: '7.5' })).toBe('https://jsonplaceholder.typicode.com/posts/7.5')
+    expect(posts.buildUrl({ postId: '101' })).toBe('https://jsonplaceholder.typicode.com/posts/101')
+    expect(posts.buildUrl({ postId: '' })).toBe('https://jsonplaceholder.typicode.com/posts/')
+  })
+
+  it('keeps Stack Exchange tags and page-size intent exact for shared validation', () => {
+    const stackExchange = getApiById('stack-exchange')
+    expect(stackExchange).toBeDefined()
+    if (!stackExchange) return
+
+    expect(stackExchange.fields.find((field) => field.id === 'tags')).toMatchObject({
+      type: 'text',
+      minLength: 1,
+      maxLength: 200,
+      pattern: '[^;]+(?:;[^;]+){0,4}',
+    })
+    expect(stackExchange.fields.find((field) => field.id === 'limit')).toMatchObject({
+      type: 'number',
+      min: 1,
+      max: 20,
+      step: 1,
+    })
+    expect(validateParameters(stackExchange, { tags: '   ', limit: '8' })).toHaveProperty('tags')
+    expect(validateParameters(stackExchange, { tags: 'javascript', limit: '8.5' })).toEqual({
+      limit: 'Questions must use increments of 1.',
+    })
+
+    const malformed = new URL(stackExchange.buildUrl({ tags: '   ', limit: '8.5' }))
+    expect(malformed.searchParams.get('tagged')).toBe('')
+    expect(malformed.searchParams.get('pagesize')).toBe('8.5')
+
+    const valid = new URL(stackExchange.buildUrl({ tags: ' javascript;reactjs ', limit: '8' }))
+    expect(valid.searchParams.get('tagged')).toBe('javascript;reactjs')
+    expect(valid.searchParams.get('pagesize')).toBe('8')
+  })
+
   it('keeps zero-valued numeric inputs valid and exposes only supported AlAdhan built-in method IDs', () => {
     const aladhan = getApiById('aladhan-prayer-times')
     expect(aladhan).toBeDefined()
@@ -87,6 +137,16 @@ describe('API catalog', () => {
     const url = new URL(bank.buildUrl({ ...defaults, startDate: '2026-08-03', endDate: '2026-08-07' }))
     expect(url.searchParams.get('start_date')).toBe('2026-08-03')
     expect(url.searchParams.get('end_date')).toBe('2026-08-07')
+
+    const malformedUrl = new URL(bank.buildUrl({
+      ...defaults,
+      series: 'FXUSDCAD,FXEURCAD',
+      startDate: '2025-02-30',
+      endDate: 'not-a-date',
+    }))
+    expect(decodeURIComponent(malformedUrl.pathname)).toBe('/valet/observations/FXUSDCAD,FXEURCAD/json')
+    expect(malformedUrl.searchParams.get('start_date')).toBe('2025-02-30')
+    expect(malformedUrl.searchParams.get('end_date')).toBe('not-a-date')
   })
 
   it('uses one ISO date SSOT for historical climate inputs and converts only at provider boundaries', () => {
@@ -111,9 +171,28 @@ describe('API catalog', () => {
     expect(openMeteoUrl.searchParams.get('start_date')).toBe('2026-08-03')
     expect(openMeteoUrl.searchParams.get('end_date')).toBe('2026-08-07')
 
+    const malformedOpenMeteoUrl = new URL(openMeteo.buildUrl({
+      ...getDefaultParameters(openMeteo),
+      startDate: '2025-02-30',
+      endDate: 'not-a-date',
+    }))
+    expect(malformedOpenMeteoUrl.searchParams.get('start_date')).toBe('2025-02-30')
+    expect(malformedOpenMeteoUrl.searchParams.get('end_date')).toBe('not-a-date')
+
     const nasaUrl = new URL(nasaPower.buildUrl({ ...getDefaultParameters(nasaPower), startDate: '2026-08-03', endDate: '2026-08-07' }))
     expect(nasaUrl.searchParams.get('start')).toBe('20260803')
     expect(nasaUrl.searchParams.get('end')).toBe('20260807')
+    expect(nasaPower.fields.find((field) => field.id === 'parameters')).toMatchObject({ type: 'text', minLength: 1 })
+
+    const malformedNasaUrl = new URL(nasaPower.buildUrl({
+      ...getDefaultParameters(nasaPower),
+      startDate: '2025-02-30',
+      endDate: 'not-a-date',
+      parameters: '',
+    }))
+    expect(malformedNasaUrl.searchParams.get('start')).toBe('2025-02-30')
+    expect(malformedNasaUrl.searchParams.get('end')).toBe('not-a-date')
+    expect(malformedNasaUrl.searchParams.get('parameters')).toBe('')
   })
 
   it('keeps ordered date and year ranges in the shared field SSOT instead of silently rewriting reversed input', () => {
@@ -237,6 +316,8 @@ describe('API catalog', () => {
 
     expect(new URL(brasil.buildUrl({ postcode: '01310930' })).pathname).toBe('/api/cep/v2/01310930')
     expect(new URL(brasil.buildUrl({ postcode: '01310-930' })).pathname).toBe('/api/cep/v2/01310930')
+    expect(new URL(brasil.buildUrl({ postcode: '' })).pathname).toBe('/api/cep/v2/')
+    expect(decodeURIComponent(new URL(brasil.buildUrl({ postcode: '01310-930abc' })).pathname)).toBe('/api/cep/v2/01310930abc')
   })
 
   it('rejects undeclared parameter keys across the shared catalog validation boundary', () => {
@@ -369,10 +450,14 @@ describe('API catalog', () => {
   })
 
   it('builds the five curated 200-API expansion requests from the shared SSOT', () => {
-    const seasonal = new URL(getApiById('open-meteo-seasonal')!.buildUrl({ latitude: '1.3521', longitude: '103.8198', forecastDays: '42' }))
+    const seasonalApi = getApiById('open-meteo-seasonal')!
+    const seasonal = new URL(seasonalApi.buildUrl({ latitude: '1.3521', longitude: '103.8198', forecastDays: '42' }))
     expect(seasonal.hostname).toBe('seasonal-api.open-meteo.com')
     expect(seasonal.searchParams.get('weekly')).toBe('temperature_2m_mean,temperature_2m_anomaly,precipitation_mean,precipitation_anomaly')
     expect(seasonal.searchParams.get('forecast_days')).toBe('42')
+    expect(seasonalApi.fields.find((field) => field.id === 'forecastDays')).toMatchObject({ min: 1, max: 46, step: 1 })
+    expect(validateParameters(seasonalApi, { latitude: '1.3521', longitude: '103.8198', forecastDays: '42.5' })).toEqual({ forecastDays: 'Forecast horizon (days) must use increments of 1.' })
+    expect(new URL(seasonalApi.buildUrl({ latitude: '1.3521', longitude: '103.8198', forecastDays: ' 42.5 ' })).searchParams.get('forecast_days')).toBe('42.5')
 
     const ratings = new URL(getApiById('nhtsa-safety-ratings')!.buildUrl({ vehicleId: '19426' }))
     expect(ratings.pathname).toBe('/SafetyRatings/VehicleId/19426')
@@ -460,8 +545,35 @@ describe('API catalog', () => {
     expect(urls['open-meteo-air-quality'].searchParams.get('current')).toContain('us_aqi')
     expect(urls['sunrise-sunset'].pathname).toBe('/v2')
     expect(urls['nasa-eonet-events'].searchParams.get('status')).toBe('open')
+    const eonet = getApiById('nasa-eonet-events')!
+    expect(eonet.fields.find((field) => field.id === 'days')).toMatchObject({ min: 1, max: 365, step: 1 })
+    expect(eonet.fields.find((field) => field.id === 'limit')).toMatchObject({ min: 1, max: 10, step: 1 })
+    expect(validateParameters(eonet, { category: 'all', days: '30.5', limit: '6' })).toEqual({ days: 'Recent days must use increments of 1.' })
+    expect(validateParameters(eonet, { category: 'all', days: '30', limit: '6.5' })).toEqual({ limit: 'Events must use increments of 1.' })
+    const malformedEonet = new URL(eonet.buildUrl({ category: 'all', days: '30.5', limit: '6.5' }))
+    expect(malformedEonet.searchParams.get('days')).toBe('30.5')
+    expect(malformedEonet.searchParams.get('limit')).toBe('6.5')
     expect(urls['mbta-transit-routes'].searchParams.get('filter[type]')).toBe('0,1')
+    const mbta = getApiById('mbta-transit-routes')!
+    expect(validateParameters(mbta, { routeType: '' })).toHaveProperty('routeType')
+    expect(new URL(mbta.buildUrl({ routeType: '' })).searchParams.get('filter[type]')).toBe('')
     expect(urls['open-trivia'].searchParams.get('type')).toBe('multiple')
+    const trivia = getApiById('open-trivia')!
+    expect(trivia.fields.find((field) => field.id === 'amount')).toMatchObject({ min: 1, max: 10, step: 1 })
+    expect(validateParameters(trivia, { amount: '6.5', category: '9', difficulty: 'medium' })).toEqual({ amount: 'Questions must use increments of 1.' })
+    expect(validateParameters(trivia, { amount: '0', category: '9', difficulty: 'medium' })).toHaveProperty('amount')
+    expect(validateParameters(trivia, { amount: '11', category: '9', difficulty: 'medium' })).toHaveProperty('amount')
+    const malformedTrivia = new URL(trivia.buildUrl({ amount: ' 6.5 ', category: '9', difficulty: 'medium' }))
+    expect(malformedTrivia.searchParams.get('amount')).toBe('6.5')
+    expect(trivia.usageNote).toMatch(/CC BY-SA 4\.0/i)
+    expect(trivia.usageNote).toMatch(/one API request every 5 seconds/i)
+    expect(getAutomatedVerificationPolicy(trivia)).toEqual({
+      mode: 'cadence-limited',
+      minimumIntervalSeconds: 5,
+      retryOnNon2xx: false,
+      reason: 'Open Trivia DB limits each IP to one API request every 5 seconds. Automated verification must use one isolated request per cadence window and must not add a same-run non-2xx retry.',
+      policyUrl: 'https://opentdb.com/api_config.php',
+    })
   })
 
   it('builds the Frankfurter long-history market demo', () => {
@@ -487,10 +599,32 @@ describe('API catalog', () => {
     expect(urls['malaysia-fuel-price'].searchParams.get('id')).toBe('fuelprice')
     expect(urls['open-meteo-marine'].searchParams.get('hourly')).toContain('ocean_current_velocity')
     expect(urls['open-meteo-marine'].searchParams.get('forecast_days')).toBe('3')
+    const marine = getApiById('open-meteo-marine')!
+    expect(marine.fields.find((field) => field.id === 'days')).toMatchObject({ min: 1, max: 7, step: 1 })
+    expect(validateParameters(marine, { latitude: '1.3521', longitude: '103.8198', days: '3.5' })).toEqual({ days: 'Forecast days must use increments of 1.' })
+    expect(new URL(marine.buildUrl({ latitude: '1.3521', longitude: '103.8198', days: ' 3.5 ' })).searchParams.get('forecast_days')).toBe('3.5')
     expect(urls['nobel-prizes'].searchParams.get('nobelPrizeCategory')).toBe('phy')
-    expect(urls['chess-player-stats'].pathname).toBe('/pub/player/magnuscarlsen/stats')
+    const nobel = getApiById('nobel-prizes')!
+    expect(nobel.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 12, step: 1 })
+    expect(validateParameters(nobel, { category: 'phy', limit: '6.5' })).toEqual({ limit: 'Prize years must use increments of 1.' })
+    expect(validateParameters(nobel, { category: '', limit: '6' })).toEqual({ category: 'Prize category is required.' })
+    const fractionalNobel = new URL(nobel.buildUrl({ category: 'phy', limit: ' 6.5 ' }))
+    expect(fractionalNobel.searchParams.get('limit')).toBe('6.5')
+    const blankCategoryNobel = new URL(nobel.buildUrl({ category: '', limit: '6' }))
+    expect(blankCategoryNobel.searchParams.get('nobelPrizeCategory')).toBe('')
+    expect(urls['chess-player-stats'].pathname).toBe('/api/user/thibault')
+    expect(urls['chess-player-stats'].hostname).toBe('lichess.org')
     expect(urls['crossref-works'].pathname).toBe('/v1/works')
     expect(urls['crossref-works'].searchParams.get('select')).toContain('DOI')
+    const crossref = getApiById('crossref-works')!
+    expect(crossref.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(crossref.fields.find((field) => field.id === 'rows')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+    expect(validateParameters(crossref, { query: '   ', rows: '8' })).toEqual({ query: 'Research query is required.' })
+    expect(validateParameters(crossref, { query: 'agentic AI', rows: '8.5' })).toEqual({ rows: 'Results must use increments of 1.' })
+    const blankCrossref = new URL(crossref.buildUrl({ query: '   ', rows: '8' }))
+    expect(blankCrossref.searchParams.get('query')).toBe('')
+    const fractionalCrossref = new URL(crossref.buildUrl({ query: 'agentic AI', rows: ' 8.5 ' }))
+    expect(fractionalCrossref.searchParams.get('rows')).toBe('8.5')
   })
 
   it('builds the next twelve browser-ready keyless API requests', () => {
@@ -522,11 +656,21 @@ describe('API catalog', () => {
     expect(getApiById('wikipedia-search')?.headers?.['Api-User-Agent']).toBe('Public-API/0.1 (https://yapweijun1996.github.io/Public-API/)')
     expect(getApiById('wikipedia-search')?.usageNote).toContain('CC BY-SA')
     expect(urls['open-meteo-flood'].searchParams.get('daily')).toBe('river_discharge,river_discharge_mean,river_discharge_max')
-    expect(getApiById('open-meteo-flood')?.fields.find((field) => field.id === 'days')).toMatchObject({ min: 1, max: 30, step: 1 })
+    const floodApi = getApiById('open-meteo-flood')!
+    expect(floodApi.fields.find((field) => field.id === 'days')).toMatchObject({ min: 1, max: 30, step: 1 })
+    expect(validateParameters(floodApi, { latitude: '1.3521', longitude: '103.8198', days: '7.5' })).toEqual({ days: 'Forecast days must use increments of 1.' })
+    expect(new URL(floodApi.buildUrl({ latitude: '1.3521', longitude: '103.8198', days: ' 7.5 ' })).searchParams.get('forecast_days')).toBe('7.5')
     expect(urls['open-meteo-history'].searchParams.get('daily')).toContain('temperature_2m_max')
     expect(urls['kraken-public-ticker'].searchParams.get('pair')).toBe('XBTUSD')
     expect(urls['kraken-public-ticker'].searchParams.get('assetVersion')).toBe('1')
     expect(urls['gitlab-public-projects'].searchParams.get('visibility')).toBe('public')
+    const gitlab = getApiById('gitlab-public-projects')!
+    expect(gitlab.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(gitlab.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+    expect(validateParameters(gitlab, { query: '   ', limit: '8' })).toEqual({ query: 'Project search is required.' })
+    expect(validateParameters(gitlab, { query: 'artificial intelligence', limit: '8.5' })).toEqual({ limit: 'Projects must use increments of 1.' })
+    expect(new URL(gitlab.buildUrl({ query: '   ', limit: '8' })).searchParams.get('search')).toBe('')
+    expect(new URL(gitlab.buildUrl({ query: 'artificial intelligence', limit: ' 8.5 ' })).searchParams.get('per_page')).toBe('8.5')
     expect(urls['uk-police-street-crime'].pathname).toContain('/burglary')
     expect([...urls['uk-police-street-crime'].searchParams.keys()]).toEqual(['lat', 'lng'])
     expect(urls['uk-police-street-crime'].searchParams.get('lat')).toBe('51.5074')
@@ -569,11 +713,16 @@ describe('API catalog', () => {
     expect(urls['openf1-historical'].pathname).toBe('/ergast/f1/2025/1/qualifying/')
     expect(urls['irail-liveboard'].pathname).toBe('/liveboard/')
     expect(urls['irail-liveboard'].searchParams.get('arrdep')).toBe('departure')
+    expect(new URL(getApiById('irail-liveboard')!.buildUrl({ station: 'Gent-Sint-Pieters', direction: 'arrival' })).searchParams.get('arrdep')).toBe('arrival')
     expect(urls['spaceflight-news'].pathname).toBe('/v4/articles/')
     expect(urls['spaceflight-news'].searchParams.get('limit')).toBe('6')
     expect(urls['launch-library-upcoming'].pathname).toBe('/2.3.0/launches/upcoming/')
     expect(urls['launch-library-upcoming'].searchParams.get('limit')).toBe('4')
     expect(urls['wiktionary-entry'].pathname).toBe('/api/rest_v1/page/definition/hello')
+    const wiktionary = getApiById('wiktionary-entry')!
+    expect(wiktionary.fields.find((field) => field.id === 'word')).toMatchObject({ type: 'text', defaultValue: 'hello', minLength: 1 })
+    expect(validateParameters(wiktionary, { word: '' })).toHaveProperty('word')
+    expect(new URL(wiktionary.buildUrl({ word: '' })).pathname).toBe('/api/rest_v1/page/definition/')
     expect(urls['animechan-random-quote'].pathname).toBe('/v1/quotes/random')
     expect(getApiById('animechan-random-quote')?.usageNote).toContain('100 requests per day per IP address')
     expect(getApiById('animechan-random-quote')?.usageNote).toContain('HTTP 429')
@@ -729,7 +878,10 @@ describe('API catalog', () => {
     expect(getApiById('where-the-iss-at')?.usageNote).toContain('roughly one per second')
 
     const qrApi = getApiById('qr-code-generator')
-    expect(qrApi?.parseResponse?.('binary-png-bytes')).toEqual({ note: 'Binary PNG image response — see the rendered QR code below.', approximateBytes: 16 })
+    expect(qrApi?.responseType).toBe('image')
+    expect(qrApi?.headers).toEqual({ Accept: 'image/png' })
+    expect(qrApi?.responseContentTypes).toEqual(['image/png'])
+    expect(qrApi?.parseResponse).toBeUndefined()
   })
 
   it('builds the exact Art Institute public-domain image search and preserves invalid input for shared validation', () => {
@@ -868,7 +1020,10 @@ describe('API catalog', () => {
     expect(languageToolApi?.buildBody?.({ text: 'Hello' })).toEqual({ text: 'Hello', language: 'en-US' })
 
     const diceBearApi = getApiById('dicebear-avatar')
-    expect(diceBearApi?.parseResponse?.('<svg></svg>')).toEqual({ note: 'Raw SVG image response — see the rendered avatar below.', approximateBytes: 11 })
+    expect(diceBearApi?.responseType).toBe('image')
+    expect(diceBearApi?.headers).toEqual({ Accept: 'image/svg+xml' })
+    expect(diceBearApi?.responseContentTypes).toEqual(['image/svg+xml'])
+    expect(diceBearApi?.parseResponse).toBeUndefined()
   })
 
   it('builds the thirteen newly prioritized keyless API requests', () => {
@@ -885,6 +1040,13 @@ describe('API catalog', () => {
     expect(urls['packagist-search'].hostname).toBe('packagist.org')
     expect(urls['packagist-search'].searchParams.get('q')).toBe('react')
     expect(urls['packagist-search'].searchParams.get('per_page')).toBe('8')
+    const packagist = getApiById('packagist-search')!
+    expect(packagist.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(packagist.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+    expect(validateParameters(packagist, { query: '   ', limit: '8' })).toEqual({ query: 'Package search is required.' })
+    expect(validateParameters(packagist, { query: 'react', limit: '8.5' })).toEqual({ limit: 'Packages must use increments of 1.' })
+    expect(new URL(packagist.buildUrl({ query: '   ', limit: '8' })).searchParams.get('q')).toBe('')
+    expect(new URL(packagist.buildUrl({ query: 'react', limit: ' 8.5 ' })).searchParams.get('per_page')).toBe('8.5')
     expect(urls['anilist-graphql'].pathname).toBe('/')
     expect(urls['openverse-search'].pathname).toBe('/v1/images/')
     expect(urls['openverse-search'].searchParams.get('q')).toBe('space')
@@ -905,6 +1067,21 @@ describe('API catalog', () => {
     expect(urls['bank-of-canada-valet'].pathname).toBe('/valet/observations/FXUSDCAD/json')
     expect(urls['swiss-transit-connections'].pathname).toBe('/v1/connections')
     expect(urls['swiss-transit-connections'].searchParams.get('from')).toBe('Zurich')
+    expect(urls['swiss-transit-connections'].searchParams.get('to')).toBe('Geneva')
+    expect(urls['swiss-transit-connections'].searchParams.get('limit')).toBe('6')
+    const swissTransit = getApiById('swiss-transit-connections')!
+    expect(swissTransit.fields.find((field) => field.id === 'from')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(swissTransit.fields.find((field) => field.id === 'to')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(swissTransit.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 10, step: 1 })
+    expect(validateParameters(swissTransit, { from: '   ', to: 'Geneva', limit: '6' })).toEqual({ from: 'Origin is required.' })
+    expect(validateParameters(swissTransit, { from: 'Zurich', to: '   ', limit: '6' })).toEqual({ to: 'Destination is required.' })
+    expect(validateParameters(swissTransit, { from: 'Zurich', to: 'Geneva', limit: '6.5' })).toEqual({ limit: 'Connections must use increments of 1.' })
+    const blankSwissOrigin = new URL(swissTransit.buildUrl({ from: '   ', to: 'Geneva', limit: '6' }))
+    const blankSwissDestination = new URL(swissTransit.buildUrl({ from: 'Zurich', to: '   ', limit: '6' }))
+    const fractionalSwissLimit = new URL(swissTransit.buildUrl({ from: 'Zurich', to: 'Geneva', limit: ' 6.5 ' }))
+    expect(blankSwissOrigin.searchParams.get('from')).toBe('')
+    expect(blankSwissDestination.searchParams.get('to')).toBe('')
+    expect(fractionalSwissLimit.searchParams.get('limit')).toBe('6.5')
     expect(urls['nasa-power-climate'].pathname).toBe('/api/temporal/daily/point')
     expect(urls['nasa-power-climate'].searchParams.get('community')).toBe('AG')
     expect(urls['nasa-power-climate'].searchParams.get('format')).toBe('JSON')
@@ -959,6 +1136,29 @@ describe('API catalog', () => {
     expect(malformed.searchParams.get('month')).toBe('x')
     expect(hebcal.usageNote).toContain('CC BY 4.0')
     expect(getAutomatedVerificationPolicy(hebcal)).toMatchObject({ mode: 'enabled', retryOnRateLimit: false, rateLimitStatuses: [429] })
+  })
+
+  it('keeps Malaysia data.gov.my result limits in SSOT validation without silently rewriting explicit invalid values', () => {
+    const cases = [
+      { id: 'malaysia-core-cpi', valid: '12', below: '5', above: '61', fractional: '12.5' },
+      { id: 'malaysia-household-income', valid: '10', below: '5', above: '31', fractional: '10.5' },
+      { id: 'malaysia-population', valid: '10', below: '5', above: '58', fractional: '10.5' },
+    ]
+
+    for (const testCase of cases) {
+      const api = getApiById(testCase.id)
+      expect(api, testCase.id).toBeDefined()
+      if (!api) continue
+
+      expect(validateParameters(api, { limit: testCase.valid }), testCase.id).toEqual({})
+      expect(validateParameters(api, { limit: testCase.below }), testCase.id).toHaveProperty('limit')
+      expect(validateParameters(api, { limit: testCase.above }), testCase.id).toHaveProperty('limit')
+      expect(validateParameters(api, { limit: testCase.fractional }), testCase.id).toHaveProperty('limit')
+
+      expect(new URL(api.buildUrl({ limit: ` ${testCase.below} ` })).searchParams.get('limit'), `${testCase.id} below-min`).toBe(testCase.below)
+      expect(new URL(api.buildUrl({ limit: ` ${testCase.above} ` })).searchParams.get('limit'), `${testCase.id} above-max`).toBe(testCase.above)
+      expect(new URL(api.buildUrl({ limit: ` ${testCase.fractional} ` })).searchParams.get('limit'), `${testCase.id} fractional`).toBe(testCase.fractional)
+    }
   })
 
   it('builds the latest 13 priority keyless API requests from the 2026-08-02 audit', () => {
@@ -1155,6 +1355,8 @@ describe('API catalog', () => {
     expect(urls['pub-dev'].search).toBe('')
     expect(urls['go-module-proxy'].hostname).toBe('proxy.golang.org')
     expect(urls['go-module-proxy'].pathname).toBe('/github.com/gin-gonic/gin/@v/list')
+    expect(getApiById('go-module-proxy')?.responseType).toBe('text')
+    expect(getApiById('go-module-proxy')?.responseContentTypes).toEqual(['text/plain'])
     expect(urls['flathub-appstream'].hostname).toBe('flathub.org')
     expect(urls['flathub-appstream'].pathname).toBe('/api/v2/appstream/org.gnome.Calculator')
     expect(urls['flathub-appstream'].search).toBe('')
@@ -1336,6 +1538,22 @@ describe('API catalog', () => {
     expect(urls['circl-vulnerability'].pathname).toBe('/api/vulnerability/CVE-2021-44228')
   })
 
+  it('keeps GBIF occurrence scientific-name and limit intent in shared SSOT validation', () => {
+    const gbif = getApiById('gbif-occurrence-search')
+    expect(gbif).toBeDefined()
+    if (!gbif) return
+
+    expect(gbif.fields.find((field) => field.id === 'scientificName')?.minLength).toBe(1)
+    expect(gbif.fields.find((field) => field.id === 'limit')).toMatchObject({ min: 1, max: 20, step: 1 })
+    expect(validateParameters(gbif, { scientificName: '   ', limit: '6' })).toHaveProperty('scientificName')
+    expect(validateParameters(gbif, { scientificName: 'Panthera leo', limit: '6.5' })).toEqual({ limit: 'Records must use increments of 1.' })
+
+    const blank = new URL(gbif.buildUrl({ scientificName: '   ', limit: '6' }))
+    expect(blank.searchParams.get('scientificName')).toBe('')
+    const fractional = new URL(gbif.buildUrl({ scientificName: 'Panthera leo', limit: '6.5' }))
+    expect(fractional.searchParams.get('limit')).toBe('6.5')
+  })
+
   it('rejects fractional World Bank years before execution', () => {
     const worldBank = getApiById('world-bank-indicator-explorer')
     expect(worldBank).toBeDefined()
@@ -1383,6 +1601,9 @@ describe('API catalog', () => {
   it('keeps the Open-Meteo Ensemble request on one documented model and variable-unit surface', () => {
     const ensemble = getApiById('open-meteo-ensemble')
     expect(ensemble).toBeDefined()
+    expect(ensemble?.fields.find((field) => field.id === 'forecastDays')).toMatchObject({ min: 1, max: 7, step: 1 })
+    expect(validateParameters(ensemble!, { latitude: '1.3521', longitude: '103.8198', variable: 'temperature_2m', forecastDays: '3.5' })).toEqual({ forecastDays: 'Forecast days must use increments of 1.' })
+    expect(new URL(ensemble!.buildUrl({ latitude: '1.3521', longitude: '103.8198', variable: 'temperature_2m', forecastDays: ' 3.5 ' })).searchParams.get('forecast_days')).toBe('3.5')
 
     for (const variable of ['temperature_2m', 'precipitation', 'wind_speed_10m']) {
       const url = new URL(ensemble!.buildUrl({ variable, forecastDays: '7' }))
@@ -1511,6 +1732,23 @@ describe('API catalog', () => {
     expect(github!.headers).toMatchObject({ Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10' })
   })
 
+  it('keeps Canada Open Data keyword and row-count intent exact in the shared SSOT', () => {
+    const canada = getApiById('canada-open-data-search')
+    expect(canada).toBeDefined()
+    if (!canada) return
+
+    expect(canada.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', defaultValue: 'artificial intelligence', minLength: 1 })
+    expect(canada.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '6', min: 1, max: 20, step: 1 })
+    expect(validateParameters(canada, { query: '   ', limit: '3' })).toEqual({ query: 'Catalogue search is required.' })
+    expect(validateParameters(canada, { query: 'climate', limit: '3.5' })).toEqual({ limit: 'Results must use increments of 1.' })
+
+    const fractional = new URL(canada.buildUrl({ query: 'climate', limit: '3.5' }))
+    expect(fractional.searchParams.get('q')).toBe('climate')
+    expect(fractional.searchParams.get('rows')).toBe('3.5')
+    const blankQuery = new URL(canada.buildUrl({ query: '   ', limit: '3' }))
+    expect(blankQuery.searchParams.get('q')).toBe('')
+  })
+
   it('models DEV published articles as a Forem v1 exact-tag request', () => {
     const devto = getApiById('devto')
     expect(devto).toBeDefined()
@@ -1524,7 +1762,13 @@ describe('API catalog', () => {
     expect(url.searchParams.get('page')).toBe('1')
     expect(devto.headers).toEqual({ Accept: 'application/vnd.forem.api-v1+json' })
     expect(devto.fields.find((field) => field.id === 'tag')).toMatchObject({ type: 'text', defaultValue: 'javascript', minLength: 1, maxLength: 50 })
-    expect(devto.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20 })
+    expect(devto.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20, step: 1 })
+    expect(validateParameters(devto, { tag: 'javascript', limit: '8.5' })).toEqual({ limit: 'Articles must use increments of 1.' })
+    expect(validateParameters(devto, { tag: '   ', limit: '8' })).toEqual({ tag: 'Tag is required.' })
+    const fractional = new URL(devto.buildUrl({ tag: 'javascript', limit: '8.5' }))
+    expect(fractional.searchParams.get('per_page')).toBe('8.5')
+    const blankTag = new URL(devto.buildUrl({ tag: '   ', limit: '8' }))
+    expect(blankTag.searchParams.get('tag')).toBe('')
   })
 
   it('models Hacker News item lookup as a validated request-bound item ID', () => {
@@ -1546,8 +1790,9 @@ describe('API catalog', () => {
 
     expect(nvdCpe.fields.map((field) => field.id)).toEqual(['query', 'limit'])
     expect(nvdCpe.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', defaultValue: 'openssl', minLength: 1 })
-    expect(nvdCpe.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20 })
+    expect(nvdCpe.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20, step: 1 })
     expect(validateParameters(nvdCpe, { query: '', limit: '8' })).toHaveProperty('query')
+    expect(validateParameters(nvdCpe, { query: 'postgresql', limit: '6.5' })).toHaveProperty('limit')
     expect(validateParameters(nvdCpe, { query: 'postgresql', limit: '6' })).toEqual({})
 
     const url = new URL(nvdCpe.buildUrl({ query: ' postgresql ', limit: '6' }))
@@ -1555,6 +1800,9 @@ describe('API catalog', () => {
     expect(url.pathname).toBe('/rest/json/cpes/2.0')
     expect(url.searchParams.get('keywordSearch')).toBe('postgresql')
     expect(url.searchParams.get('resultsPerPage')).toBe('6')
+    const explicitInvalid = new URL(nvdCpe.buildUrl({ query: '   ', limit: '8.5' }))
+    expect(explicitInvalid.searchParams.get('keywordSearch')).toBe('')
+    expect(explicitInvalid.searchParams.get('resultsPerPage')).toBe('8.5')
   })
 
   it('models NVD CVE description search parameters in the shared request SSOT', () => {
@@ -1564,8 +1812,9 @@ describe('API catalog', () => {
 
     expect(nvdCves.fields.map((field) => field.id)).toEqual(['query', 'limit'])
     expect(nvdCves.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', defaultValue: 'postgresql', minLength: 1, maxLength: 100 })
-    expect(nvdCves.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20 })
+    expect(nvdCves.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', defaultValue: '8', min: 1, max: 20, step: 1 })
     expect(validateParameters(nvdCves, { query: '', limit: '8' })).toHaveProperty('query')
+    expect(validateParameters(nvdCves, { query: 'remote code', limit: '6.5' })).toHaveProperty('limit')
     expect(validateParameters(nvdCves, { query: 'remote code', limit: '6' })).toEqual({})
 
     const url = new URL(nvdCves.buildUrl({ query: ' remote code ', limit: '6' }))
@@ -1574,7 +1823,22 @@ describe('API catalog', () => {
     expect(url.searchParams.get('keywordSearch')).toBe('remote code')
     expect(url.searchParams.get('resultsPerPage')).toBe('6')
     expect(url.searchParams.has('keywordExactMatch')).toBe(false)
+    const explicitInvalid = new URL(nvdCves.buildUrl({ query: '   ', limit: '8.5' }))
+    expect(explicitInvalid.searchParams.get('keywordSearch')).toBe('')
+    expect(explicitInvalid.searchParams.get('resultsPerPage')).toBe('8.5')
     expect(apiCatalog.filter((api) => matchesApiSearch(api, 'NVD CVE Search')).map(({ id }) => id)).toEqual(['nvd-cves'])
+  })
+
+  it('preserves explicit invalid NVD CVE detail input for shared validation', () => {
+    const detail = getApiById('nvd-cve-detail')
+    expect(detail).toBeDefined()
+    if (!detail) return
+
+    expect(validateParameters(detail, { cve: '' })).toHaveProperty('cve')
+    const explicitBlank = new URL(detail.buildUrl({ cve: '   ' }))
+    expect(explicitBlank.searchParams.get('cveId')).toBe('')
+    const valid = new URL(detail.buildUrl({ cve: ' CVE-2024-3094 ' }))
+    expect(valid.searchParams.get('cveId')).toBe('CVE-2024-3094')
   })
 
   it('models NVD recently modified CVEs as a bounded runtime last-modified window', () => {
@@ -1715,9 +1979,9 @@ describe('API catalog', () => {
 
     expect(apiCatalog).toHaveLength(196)
     expect(runnable).toHaveLength(193)
-    expect(automatedVerificationEligible).toHaveLength(185)
+    expect(automatedVerificationEligible).toHaveLength(184)
     expect(manualOnly).toEqual(['circl-vulnerability', 'internet-archive-search', 'languagetool-grammar-check'])
-    expect(cadenceLimited).toEqual(['celestrak-satellites', 'launch-library-upcoming', 'nvd-cpe-search', 'nvd-cve-detail', 'nvd-cves', 'nvd-recent-cves', 'osrm-route', 'stack-exchange'])
+    expect(cadenceLimited).toEqual(['celestrak-satellites', 'launch-library-upcoming', 'nvd-cpe-search', 'nvd-cve-detail', 'nvd-cves', 'nvd-recent-cves', 'open-trivia', 'osrm-route', 'stack-exchange'])
 
     const snapshot = phase2DocSource.match(/Current local candidate snapshot \([^)]*\): \*\*(\d+) catalog APIs \/ (\d+) structured-agent runnable \/ (\d+) automated-verification-eligible/)
     expect(snapshot, 'Phase-2 current snapshot must publish the executable catalog/policy counts').not.toBeNull()
@@ -1906,6 +2170,27 @@ describe('API catalog', () => {
     }
   })
 
+  it('keeps HN Algolia search input exact for shared pre-network validation', () => {
+    const hn = apiCatalog.find((candidate) => candidate.id === 'hn-search-algolia')
+    expect(hn).toBeDefined()
+    if (!hn) return
+
+    expect(hn.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', minLength: 1 })
+    expect(hn.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+
+    const defaults = getDefaultParameters(hn)
+    expect(validateParameters(hn, { ...defaults, query: '   ' })).toHaveProperty('query')
+    expect(validateParameters(hn, { ...defaults, limit: '6.5' })).toHaveProperty('limit')
+    expect(validateParameters(hn, { ...defaults, tag: 'poll' })).toHaveProperty('tag')
+
+    const blank = new URL(hn.buildUrl({ query: '   ', tag: 'story', limit: '6' }))
+    expect(blank.searchParams.get('query')).toBe('')
+    const fractional = new URL(hn.buildUrl({ query: 'OpenAI', tag: 'story', limit: ' 6.5 ' }))
+    expect(fractional.searchParams.get('hitsPerPage')).toBe('6.5')
+    const unsupportedTag = new URL(hn.buildUrl({ query: 'OpenAI', tag: 'poll', limit: '6' }))
+    expect(unsupportedTag.searchParams.get('tags')).toBe('poll')
+  })
+
   it('uses HN Algolia parenthesized OR tag syntax for stories and comments', () => {
     const hn = apiCatalog.find((candidate) => candidate.id === 'hn-search-algolia')
     expect(hn).toBeDefined()
@@ -1979,6 +2264,22 @@ describe('API catalog', () => {
     expect(rickMorty.usageNote).toContain('Do not treat character images as BSD-licensed reusable media')
   })
 
+  it('keeps non-JSON response contracts explicit and unambiguous', () => {
+    for (const api of apiCatalog) {
+      if (api.parseResponse) expect(api.responseType, `${api.id} custom parser must declare text transport`).toBe('text')
+      if (api.responseType === 'text') expect(api.parseResponse, `${api.id} text transport must declare its parser`).toBeTypeOf('function')
+      if (api.responseType === 'image') expect(api.parseResponse, `${api.id} image transport must not reuse the text parser`).toBeUndefined()
+      if (api.responseType) {
+        expect(api.responseContentTypes?.length, `${api.id} non-JSON transport must declare accepted Content-Type values`).toBeGreaterThan(0)
+        for (const contentType of api.responseContentTypes ?? []) {
+          expect(contentType, `${api.id} response Content-Type must be canonical lowercase media type only`).toBe(contentType.toLowerCase())
+          expect(contentType, `${api.id} response Content-Type must not include parameters`).not.toContain(';')
+          expect(contentType, `${api.id} response Content-Type must be a media type`).toMatch(/^[a-z0-9!#$&^_.+-]+\/[a-z0-9!#$&^_.+-]+$/)
+        }
+      }
+    }
+  })
+
   it('keeps declared successful no-content mappings bounded to successful HTTP statuses', () => {
     for (const api of apiCatalog) {
       if (!api.successNoContent) continue
@@ -2007,7 +2308,9 @@ describe('API catalog', () => {
     const defaults = getDefaultParameters(npmSearch)
     expect(defaults).toMatchObject({ query: 'react', limit: '8' })
     expect(npmSearch.fields.find((field) => field.id === 'query')).toMatchObject({ type: 'text', minLength: 1 })
-    expect(npmSearch.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20 })
+    expect(npmSearch.fields.find((field) => field.id === 'limit')).toMatchObject({ type: 'number', min: 1, max: 20, step: 1 })
+    expect(validateParameters(npmSearch, { query: 'react', limit: '8.5' })).toEqual({ limit: 'Packages must use increments of 1.' })
+    expect(new URL(npmSearch.buildUrl({ query: 'react', limit: '8.5' })).searchParams.get('size')).toBe('8.5')
 
     const url = new URL(npmSearch.buildUrl(defaults))
     expect(url.origin).toBe('https://registry.npmjs.org')

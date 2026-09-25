@@ -4,14 +4,14 @@ import { apiCatalog, type ApiDemo } from './apiCatalog'
 import { getPreviewProfile, type PreviewLayout } from './previewProfiles'
 import { uiText, type UiLocale, type UiMessageKey } from './i18n'
 import { deferredPreview } from './previews/previewBundles'
-import type { ExecutedRequestContext } from './useApiRequestRuntime'
+import type { ExecutedRequestContext, ResponseMediaContext } from './useApiRequestRuntime'
 
 export type { PreviewLayout } from './previewProfiles'
 export { buildDemoPreview } from './previews/buildDemoPreview'
 
 const familyPreview = (name: string) => deferredPreview('family', name)
 const CrossrefWorksPreview = familyPreview('CrossrefWorksPreview')
-const DictionaryEntryPreview = familyPreview('DictionaryEntryPreview')
+const FreeDictionaryPreview = familyPreview('FreeDictionaryPreview')
 const FederalRegisterPreview = familyPreview('FederalRegisterPreview')
 const FloodForecastPreview = familyPreview('FloodForecastPreview')
 const GbifOccurrencePreview = familyPreview('GbifOccurrencePreview')
@@ -23,7 +23,7 @@ const NagerHolidaysPreview = familyPreview('NagerHolidaysPreview')
 const UkBankHolidaysPreview = familyPreview('UkBankHolidaysPreview')
 const HebcalCalendarPreview = familyPreview('HebcalCalendarPreview')
 const AniListMediaPreview = familyPreview('AniListMediaPreview')
-const NaturalEventsPreview = familyPreview('NaturalEventsPreview')
+const NasaEonetEventsPreview = familyPreview('NasaEonetEventsPreview')
 const OpenLibrarySearchPreview = familyPreview('OpenLibrarySearchPreview')
 const OpenFoodFactsPreview = familyPreview('OpenFoodFactsPreview')
 const UkPoliceStreetCrimePreview = familyPreview('UkPoliceStreetCrimePreview')
@@ -54,8 +54,11 @@ const PubMedSearchPreview = familyPreview('PubMedSearchPreview')
 const ClinicalTrialsSearchPreview = familyPreview('ClinicalTrialsSearchPreview')
 const ResultListPreview = familyPreview('ResultListPreview')
 const SolarCyclePreview = familyPreview('SolarCyclePreview')
-const TransitBoardPreview = familyPreview('TransitBoardPreview')
-const TriviaGamePreview = familyPreview('TriviaGamePreview')
+const MBTARoutesPreview = familyPreview('MBTARoutesPreview')
+const SwissTransitConnectionsPreview = familyPreview('SwissTransitConnectionsPreview')
+const IRailLiveboardPreview = familyPreview('IRailLiveboardPreview')
+const OpenTriviaPreview = familyPreview('OpenTriviaPreview')
+const JokeApiPreview = familyPreview('JokeApiPreview')
 
 const specializedPreview = (name: string) => deferredPreview('specialized', name)
 const developerSemanticPreview = (name: string) => deferredPreview('developer-semantic', name)
@@ -63,7 +66,7 @@ const packageSemanticPreview = (name: string) => deferredPreview('package-semant
 const AnimeQuotePreview = specializedPreview('AnimeQuotePreview')
 const BrazilPostcodePreview = specializedPreview('BrazilPostcodePreview')
 const CarparkAvailabilityPreview = specializedPreview('CarparkAvailabilityPreview')
-const ChessRatingsPreview = specializedPreview('ChessRatingsPreview')
+const LichessPlayerRatingsPreview = specializedPreview('LichessPlayerRatingsPreview')
 const CountryPreview = specializedPreview('CountryPreview')
 const DatamuseWordPreview = specializedPreview('DatamuseWordPreview')
 const DevToArticlesPreview = developerSemanticPreview('DevToArticlesPreview')
@@ -76,7 +79,7 @@ const HnAlgoliaSearchPreview = developerSemanticPreview('HnAlgoliaSearchPreview'
 const IpifyPublicIpPreview = specializedPreview('IpifyPublicIpPreview')
 const CatFactPreview = specializedPreview('CatFactPreview')
 const DndSpellPreview = specializedPreview('DndSpellPreview')
-const FuelPricePreview = specializedPreview('FuelPricePreview')
+const MalaysiaFuelPricePreview = specializedPreview('MalaysiaFuelPricePreview')
 const GbifTaxonomyPreview = specializedPreview('GbifTaxonomyPreview')
 const GeneratedImagePreview = specializedPreview('GeneratedImagePreview')
 const GoModuleVersionsPreview = specializedPreview('GoModuleVersionsPreview')
@@ -108,7 +111,7 @@ const Open5eMonsterPreview = specializedPreview('Open5eMonsterPreview')
 const NobelPrizePreview = specializedPreview('NobelPrizePreview')
 const NewtonMathPreview = specializedPreview('NewtonMathPreview')
 const OpenF1SessionsPreview = specializedPreview('OpenF1SessionsPreview')
-const PoetryReaderPreview = specializedPreview('PoetryReaderPreview')
+const PoetryDbPreview = specializedPreview('PoetryDbPreview')
 const StarWarsPeoplePreview = specializedPreview('StarWarsPeoplePreview')
 const WiktionaryEntryPreview = specializedPreview('WiktionaryEntryPreview')
 
@@ -244,6 +247,7 @@ type ApiPreviewProps = {
   data: unknown
   requestUrl?: string
   executedRequest?: ExecutedRequestContext
+  responseMedia?: ResponseMediaContext
 }
 export type ApiPreviewComponent = (props: ApiPreviewProps) => ReactElement
 
@@ -254,9 +258,9 @@ const componentName = (id: string) =>
     .join('')}Preview`
 
 const defineApiPreview = (id: string, render: (props: ApiPreviewProps) => ReactElement): ApiPreviewComponent => {
-  const Component = ({ api, data, requestUrl, executedRequest }: ApiPreviewProps) => (
+  const Component = ({ api, data, requestUrl, executedRequest, responseMedia }: ApiPreviewProps) => (
     <div className={`api-specific-preview api-specific-${id}`} data-api-preview-component={id} data-visual-signature={componentName(id)} data-card-design="api-owned-v2" aria-label={`${api.name} visual component`}>
-      {render({ api, data, requestUrl, executedRequest })}
+      {render({ api, data, requestUrl, executedRequest, responseMedia })}
     </div>
   )
   Object.defineProperty(Component, 'name', { value: componentName(id) })
@@ -277,9 +281,9 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'aladhan-prayer-times': defineApiPreview('aladhan-prayer-times', ({ data, requestUrl, executedRequest }) => <PrayerTimesPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'open-meteo-air-quality': defineApiPreview('open-meteo-air-quality', ({ data, executedRequest }) => <AirQualityForecastPreview data={data} executedRequest={executedRequest}/>),
   'sunrise-sunset': defineApiPreview('sunrise-sunset', ({ data, requestUrl, executedRequest }) => <SolarCyclePreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'nasa-eonet-events': defineApiPreview('nasa-eonet-events', ({ data }) => <NaturalEventsPreview data={data}/>),
-  'mbta-transit-routes': defineApiPreview('mbta-transit-routes', ({ data }) => <TransitBoardPreview data={data}/>),
-  'open-trivia': defineApiPreview('open-trivia', ({ data }) => <TriviaGamePreview data={data}/>),
+  'nasa-eonet-events': defineApiPreview('nasa-eonet-events', ({ api, data, requestUrl, executedRequest }) => <NasaEonetEventsPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'mbta-transit-routes': defineApiPreview('mbta-transit-routes', ({ api, data, requestUrl, executedRequest }) => <MBTARoutesPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'open-trivia': defineApiPreview('open-trivia', ({ api, data, requestUrl, executedRequest }) => <OpenTriviaPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'carbon-intensity-gb': defineApiPreview('carbon-intensity-gb', ({ data }) => <CarbonIntensityPreview data={data}/>),
   'open-meteo-elevation': defineApiPreview('open-meteo-elevation', ({ data, requestUrl, executedRequest }) => <ElevationPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'data-gov-24hr-forecast': defineApiPreview('data-gov-24hr-forecast', ({ data }) => <TwentyFourHourForecastPreview data={data}/>),
@@ -326,18 +330,18 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'frankfurter-sgd-myr-history': defineApiPreview('frankfurter-sgd-myr-history', ({ data, executedRequest }) => <FrankfurterSgdMyrHistoryPreview data={data} executedRequest={executedRequest}/>),
   'open-library-search': defineApiPreview('open-library-search', ({ data, requestUrl, executedRequest }) => <OpenLibrarySearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'open-food-facts': defineApiPreview('open-food-facts', ({ data, requestUrl, executedRequest }) => <OpenFoodFactsPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'free-dictionary': defineApiPreview('free-dictionary', ({ data }) => <DictionaryEntryPreview data={data}/>),
+  'free-dictionary': defineApiPreview('free-dictionary', ({ api, data, requestUrl, executedRequest }) => <FreeDictionaryPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   pokeapi: defineApiPreview('pokeapi', ({ data, requestUrl, executedRequest }) => <PokeApiPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'art-institute-search': defineApiPreview('art-institute-search', ({ data, requestUrl, executedRequest }) => <ArtInstituteSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'tvmaze-search': defineApiPreview('tvmaze-search', ({ data, requestUrl, executedRequest }) => <TvmazeSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'gbif-species-search': defineApiPreview('gbif-species-search', ({ data }) => <GbifTaxonomyPreview data={data}/>),
+  'gbif-species-search': defineApiPreview('gbif-species-search', ({ api, data, requestUrl, executedRequest }) => <GbifTaxonomyPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'clinical-trials-search': defineApiPreview('clinical-trials-search', ({ data, requestUrl, executedRequest }) => <ClinicalTrialsSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'openfda-drug-labels': defineApiPreview('openfda-drug-labels', ({ data, requestUrl, executedRequest }) => <DrugLabelPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'coinpaprika-ticker': defineApiPreview('coinpaprika-ticker', ({ api, data, executedRequest }) => <CoinPaprikaTickerPreview api={api} data={data} executedRequest={executedRequest}/>),
-  'malaysia-fuel-price': defineApiPreview('malaysia-fuel-price', ({ data }) => <FuelPricePreview data={data}/>),
+  'malaysia-fuel-price': defineApiPreview('malaysia-fuel-price', ({ data, requestUrl, executedRequest }) => <MalaysiaFuelPricePreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'open-meteo-marine': defineApiPreview('open-meteo-marine', ({ data, requestUrl, executedRequest }) => <MarineForecastPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'nobel-prizes': defineApiPreview('nobel-prizes', ({ data }) => <NobelPrizePreview data={data}/>),
-  'chess-player-stats': defineApiPreview('chess-player-stats', ({ data }) => <ChessRatingsPreview data={data}/>),
+  'nobel-prizes': defineApiPreview('nobel-prizes', ({ api, data, requestUrl, executedRequest }) => <NobelPrizePreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'chess-player-stats': defineApiPreview('chess-player-stats', ({ api, data, requestUrl, executedRequest }) => <LichessPlayerRatingsPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'crossref-works': defineApiPreview('crossref-works', ({ data, requestUrl, executedRequest }) => <CrossrefWorksPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'noaa-space-weather': defineApiPreview('noaa-space-weather', ({ data, executedRequest }) => <NoaaSpaceWeatherPreview data={data} executedRequest={executedRequest}/>),
   'osv-vulnerability': defineApiPreview('osv-vulnerability', ({ data, executedRequest }) => <OsvVulnerabilityPreview data={data} executedRequest={executedRequest}/>),
@@ -352,22 +356,22 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'rick-morty-characters': defineApiPreview('rick-morty-characters', ({ data, requestUrl, executedRequest }) => <RickMortyCharactersPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'wikimedia-pageviews': defineApiPreview('wikimedia-pageviews', ({ data, executedRequest }) => <WikimediaPageviewsPreview data={data} executedRequest={executedRequest}/>),
   'vam-collections': defineApiPreview('vam-collections', ({ data, requestUrl, executedRequest }) => <VamCollectionsPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'openf1-historical': defineApiPreview('openf1-historical', ({ data }) => <OpenF1SessionsPreview data={data}/>),
-  'irail-liveboard': defineApiPreview('irail-liveboard', ({ data }) => <TransitBoardPreview data={data}/>),
+  'openf1-historical': defineApiPreview('openf1-historical', ({ data, requestUrl, executedRequest }) => <OpenF1SessionsPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'irail-liveboard': defineApiPreview('irail-liveboard', ({ api, data, requestUrl, executedRequest }) => <IRailLiveboardPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'spaceflight-news': defineApiPreview('spaceflight-news', ({ data, executedRequest }) => <SpaceflightNewsPreview data={data} executedRequest={executedRequest}/>),
   'launch-library-upcoming': defineApiPreview('launch-library-upcoming', ({ data, executedRequest }) => <LaunchSchedulePreview data={data} executedRequest={executedRequest}/>),
-  'wiktionary-entry': defineApiPreview('wiktionary-entry', ({ data }) => <WiktionaryEntryPreview data={data}/>),
+  'wiktionary-entry': defineApiPreview('wiktionary-entry', ({ api, data, requestUrl, executedRequest }) => <WiktionaryEntryPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'animechan-random-quote': defineApiPreview('animechan-random-quote', ({ data }) => <AnimeQuotePreview data={data}/>),
-  'jokeapi-safe': defineApiPreview('jokeapi-safe', ({ data }) => <TriviaGamePreview data={data}/>),
+  'jokeapi-safe': defineApiPreview('jokeapi-safe', ({ api, data, requestUrl, executedRequest }) => <JokeApiPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'dummyjson-recipes': defineApiPreview('dummyjson-recipes', ({ data, executedRequest }) => <DummyJsonRecipesPreview data={data} executedRequest={executedRequest}/>),
-  'brasilapi-postcode': defineApiPreview('brasilapi-postcode', ({ data }) => <BrazilPostcodePreview data={data}/>),
-  'poetrydb-poems': defineApiPreview('poetrydb-poems', ({ data }) => <PoetryReaderPreview data={data}/>),
+  'brasilapi-postcode': defineApiPreview('brasilapi-postcode', ({ api, data, requestUrl, executedRequest }) => <BrazilPostcodePreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'poetrydb-poems': defineApiPreview('poetrydb-poems', ({ api, data, requestUrl, executedRequest }) => <PoetryDbPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'coingecko-keyless-market': defineApiPreview('coingecko-keyless-market', ({ api, data, executedRequest }) => <CoinGeckoKeylessMarketPreview api={api} data={data} executedRequest={executedRequest}/>),
   'swapi-people': defineApiPreview('swapi-people', ({ data }) => <StarWarsPeoplePreview data={data}/>),
   'google-dns-doh': defineApiPreview('google-dns-doh', ({ data, requestUrl, executedRequest }) => <DnsPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'color-api': defineApiPreview('color-api', ({ data, requestUrl, executedRequest }) => <ColorPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'nasa-image-search': defineApiPreview('nasa-image-search', ({ data, requestUrl, executedRequest }) => <NasaImageSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'lichess-top-players': defineApiPreview('lichess-top-players', ({ data }) => <LichessLeaderboardPreview data={data}/>),
+  'lichess-top-players': defineApiPreview('lichess-top-players', ({ api, data, requestUrl, executedRequest }) => <LichessLeaderboardPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'pubmed-search': defineApiPreview('pubmed-search', ({ data, requestUrl, executedRequest }) => <PubMedSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'rxnorm-drug-search': defineApiPreview('rxnorm-drug-search', ({ data, requestUrl, executedRequest }) => <RxNormDrugPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'inaturalist-observations': defineApiPreview('inaturalist-observations', ({ data, requestUrl, executedRequest }) => <INaturalistObservationsPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
@@ -381,8 +385,8 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'celestrak-satellites': defineApiPreview('celestrak-satellites', ({ data, requestUrl, executedRequest }) => <CelestrakSatellitesPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'cleveland-museum-search': defineApiPreview('cleveland-museum-search', ({ data, requestUrl, executedRequest }) => <ClevelandMuseumSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'scryfall-card-search': defineApiPreview('scryfall-card-search', ({ data, requestUrl, executedRequest }) => <ScryfallCardSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'dnd5e-spell-lookup': defineApiPreview('dnd5e-spell-lookup', ({ data }) => <DndSpellPreview data={data}/>),
-  'qr-code-generator': defineApiPreview('qr-code-generator', ({ api, requestUrl }) => <GeneratedImagePreview api={api} requestUrl={requestUrl}/>),
+  'dnd5e-spell-lookup': defineApiPreview('dnd5e-spell-lookup', ({ api, data, requestUrl, executedRequest }) => <DndSpellPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
+  'qr-code-generator': defineApiPreview('qr-code-generator', ({ api, requestUrl, executedRequest, responseMedia }) => <GeneratedImagePreview api={api} requestUrl={requestUrl} executedRequest={executedRequest} responseMedia={responseMedia}/>),
   'where-the-iss-at': defineApiPreview('where-the-iss-at', ({ data, executedRequest }) => <IssPositionPreview data={data} executedRequest={executedRequest}/>),
   'eurostat-population': defineApiPreview('eurostat-population', ({ data, requestUrl, executedRequest }) => <EurostatPopulationPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'bls-timeseries': defineApiPreview('bls-timeseries', ({ api, data, executedRequest }) => <BlsTimeseriesPreview api={api} data={data} executedRequest={executedRequest}/>),
@@ -407,7 +411,7 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'newton-math-solver': defineApiPreview('newton-math-solver', ({ data, requestUrl, executedRequest }) => <NewtonMathPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'datamuse-rhymes': defineApiPreview('datamuse-rhymes', ({ data, requestUrl, executedRequest }) => <DatamuseWordPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'open5e-monster-search': defineApiPreview('open5e-monster-search', ({ data, requestUrl, executedRequest }) => <Open5eMonsterPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
-  'dicebear-avatar': defineApiPreview('dicebear-avatar', ({ api, requestUrl }) => <GeneratedImagePreview api={api} requestUrl={requestUrl}/>),
+  'dicebear-avatar': defineApiPreview('dicebear-avatar', ({ api, requestUrl, executedRequest, responseMedia }) => <GeneratedImagePreview api={api} requestUrl={requestUrl} executedRequest={executedRequest} responseMedia={responseMedia}/>),
   catfacts: defineApiPreview('catfacts', ({ data }) => <CatFactPreview data={data}/>),
   'anilist-graphql': defineApiPreview('anilist-graphql', ({ api, data, executedRequest }) => <AniListMediaPreview api={api} data={data} executedRequest={executedRequest}/>),
   'openverse-search': defineApiPreview('openverse-search', ({ data, requestUrl, executedRequest }) => <OpenverseSearchPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
@@ -421,7 +425,7 @@ export const apiPreviewComponents: Partial<Record<string, ApiPreviewComponent>> 
   'openalex-works-search': defineApiPreview('openalex-works-search', ({ data, executedRequest }) => <OpenAlexWorksPreview data={data} executedRequest={executedRequest}/>),
   'oecd-cli': defineApiPreview('oecd-cli', ({ data, requestUrl, executedRequest }) => <OecdCliPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'bank-of-canada-valet': defineApiPreview('bank-of-canada-valet', ({ data, executedRequest }) => <BankOfCanadaValetPreview data={data} executedRequest={executedRequest}/>),
-  'swiss-transit-connections': defineApiPreview('swiss-transit-connections', ({ data }) => <TransitBoardPreview data={data}/>),
+  'swiss-transit-connections': defineApiPreview('swiss-transit-connections', ({ api, data, requestUrl, executedRequest }) => <SwissTransitConnectionsPreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'nasa-power-climate': defineApiPreview('nasa-power-climate', ({ api, data, executedRequest }) => <NasaPowerClimatePreview api={api} data={data} executedRequest={executedRequest}/>),
   'zippopotam-postcode': defineApiPreview('zippopotam-postcode', ({ api, data, requestUrl, executedRequest }) => <ZippopotamPostcodePreview api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
   'malaysia-core-cpi': defineApiPreview('malaysia-core-cpi', ({ data, requestUrl, executedRequest }) => <MalaysiaCoreCpiPreview data={data} requestUrl={requestUrl} executedRequest={executedRequest}/>),
@@ -1025,11 +1029,23 @@ const previewMeta: Record<PreviewLayout, { icon: string; eyebrow: string; title:
     title: 'Transit route board',
     description: 'A route-focused interface using MBTA colors, destinations, and service types.',
   },
+  'swiss-transit-connections': {
+    icon: 'CH',
+    eyebrow: 'Live response · Swiss connection evidence',
+    title: 'Swiss transit connections',
+    description: 'Exact-request-bound Swiss connections with provider station identity, scheduled timing, service products, and honest departure-delay evidence.',
+  },
   'trivia-game': {
     icon: '?',
     eyebrow: 'Live response · Game layout',
     title: 'Trivia challenge',
     description: 'A playable-looking question deck with decoded prompts, answer options, and difficulty labels.',
+  },
+  'joke-stage': {
+    icon: 'J',
+    eyebrow: 'Live response · Joke safety',
+    title: 'Safe joke stage',
+    description: 'Exact-request-bound JokeAPI content with requested category/type identity and provider moderation-flag evidence.',
   },
   'rest-post': {
     icon: 'REST',
@@ -1222,6 +1238,12 @@ const previewMeta: Record<PreviewLayout, { icon: string; eyebrow: string; title:
     eyebrow: 'Live response · Research layout',
     title: 'Research library',
     description: 'Books, papers, and clinical studies presented with authorship, status, and identifiers.',
+  },
+  'poetry-reading-room': {
+    icon: '¶',
+    eyebrow: 'Live response · Poetry reading room',
+    title: 'PoetryDB reading room',
+    description: 'Request-bound public-domain poems with selected-author identity, bounded count, lines, and line-count evidence.',
   },
   'book-search': {
     icon: 'OL',
@@ -1461,7 +1483,7 @@ const previewMeta: Record<PreviewLayout, { icon: string; eyebrow: string; title:
     icon: '♞',
     eyebrow: 'Live response · Chess layout',
     title: 'Player ratings',
-    description: 'Competitive ratings, personal bests, match records, and win ratios compared across time controls.',
+    description: 'Public ratings, game counts, rating deviation, and provider-reported progress compared across chess modes.',
   },
   'scholarly-search': {
     icon: 'DOI',
@@ -1523,7 +1545,7 @@ const weatherPreviewMeta: Record<WeatherPreviewVariant, { icon: string; eyebrow:
   },
 }
 
-export function ResponseDemoPreview({ api, data, requestUrl, executedRequest, runtime, locale = 'en' }: { api: ApiDemo; data: unknown; requestUrl?: string; executedRequest?: ExecutedRequestContext; runtime?: SsotRuntimeMeta; locale?: UiLocale }) {
+export function ResponseDemoPreview({ api, data, requestUrl, executedRequest, responseMedia, runtime, locale = 'en' }: { api: ApiDemo; data: unknown; requestUrl?: string; executedRequest?: ExecutedRequestContext; responseMedia?: ResponseMediaContext; runtime?: SsotRuntimeMeta; locale?: UiLocale }) {
   const t = (key: UiMessageKey, values?: Record<string, string | number>) => uiText(locale, key, values)
   const ssotDefinition = apiSsotCardRegistry[api.id]
   const layout = ssotDefinition?.layout ?? selectPreviewLayout(api)
@@ -1531,7 +1553,7 @@ export function ResponseDemoPreview({ api, data, requestUrl, executedRequest, ru
   const profileLabel = ssotDefinition?.label ?? getPreviewProfile(api.id)?.label ?? previewMeta[layout].eyebrow
   const layoutMeta = weatherVariant ? weatherPreviewMeta[weatherVariant] : previewMeta[layout]
   const PreviewComponent = ssotDefinition?.Component ?? apiPreviewComponents[api.id]
-  const content: ReactNode = PreviewComponent ? <PreviewComponent api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest}/> : <ResultListPreview data={data} api={api}/>
+  const content: ReactNode = PreviewComponent ? <PreviewComponent api={api} data={data} requestUrl={requestUrl} executedRequest={executedRequest} responseMedia={responseMedia}/> : <ResultListPreview data={data} api={api}/>
 
   const headingId = `demo-preview-${api.id}`
   const formattedSize = runtime ? formatResponseBytes(runtime.size) : undefined

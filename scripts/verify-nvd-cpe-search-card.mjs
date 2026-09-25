@@ -67,7 +67,53 @@ let liveRunStarted = false
 try {
   live = await browser(`${root}/dist`)
   await live.nav('nvd-cpe-search')
+  const fieldContract = await live.ev(`(() => {
+    const query = document.querySelector('input[name="query"]')
+    const limit = document.querySelector('input[name="limit"]')
+    return {
+      queryMinLength: query?.getAttribute('minlength') || '',
+      limitMin: limit?.getAttribute('min') || '',
+      limitMax: limit?.getAttribute('max') || '',
+      limitStep: limit?.getAttribute('step') || '',
+    }
+  })()`)
+  assert.deepEqual(fieldContract, { queryMinLength: '1', limitMin: '1', limitMax: '20', limitStep: '1' })
+  const beforeInvalidInput = live.requestCount
+  await live.ev(`(() => {
+    const query = document.querySelector('input[name="query"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(query, '   ')
+    query.dispatchEvent(new Event('input', { bubbles: true }))
+    query.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await live.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(live.requestCount, beforeInvalidInput, 'Blank NVD CPE keyword reached a provider request')
+  const blankQuery = await live.ev(`(() => { const input = document.querySelector('input[name="query"]'); return { invalid: input?.getAttribute('aria-invalid') || '', text: document.querySelector('#parameter-query-help')?.textContent || '' } })()`)
+  assert.equal(blankQuery.invalid, 'true')
+  assert.match(blankQuery.text, /required/i)
   await setQuery(live)
+  await live.ev(`(() => {
+    const limit = document.querySelector('input[name="limit"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(limit, '8.5')
+    limit.dispatchEvent(new Event('input', { bubbles: true }))
+    limit.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  const fractionalLimit = await live.ev(`(() => { const input = document.querySelector('input[name="limit"]'); return { valid: input.checkValidity(), stepMismatch: input.validity.stepMismatch } })()`)
+  assert.deepEqual(fractionalLimit, { valid: false, stepMismatch: true })
+  await live.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(live.requestCount, beforeInvalidInput, 'Fractional NVD CPE result limit reached a provider request')
+  await live.ev(`(() => {
+    const limit = document.querySelector('input[name="limit"]')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(limit, '8')
+    limit.dispatchEvent(new Event('input', { bubbles: true }))
+    limit.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await sleep(100)
+  report.checks.push({ id: 'nvd-cpe-search', case: 'native exact-input contract', queryMinLength: 1, limitMin: 1, limitMax: 20, limitStep: 1, blankQueryRejected: true, fractionalLimitRejected: true, providerRequests: 0 })
   const contract = await live.ev(`({
     endpoint: document.querySelector('.endpoint-box code')?.textContent || '',
     queryValue: document.querySelector('input[name="query"]')?.value || '',

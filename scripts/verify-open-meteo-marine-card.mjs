@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const hourlyVariables = [
   'wave_height',
@@ -20,7 +20,7 @@ const endpoint = `https://marine-api.open-meteo.com/v1/marine?${new URLSearchPar
 const report = {
   origin: 'https://yapweijun1996.github.io',
   publication: 'unpublished local app bundle under the real GitHub Pages origin',
-  source: 'one live Open-Meteo marine forecast plus an exact synthetic HTTP-200 numeric-string regression',
+  source: 'native integer-input validation, one live Open-Meteo marine forecast, plus an exact synthetic HTTP-200 numeric-string regression',
   checks: [],
   errors: [],
 }
@@ -39,6 +39,33 @@ let live
 try {
   live = await browser(`${root}/dist`)
   await live.nav('open-meteo-marine')
+  const daysContract = await live.ev(`(() => {
+    const days = document.querySelector('#parameter-days')
+    return { step: days?.getAttribute('step') || '', min: days?.getAttribute('min') || '', max: days?.getAttribute('max') || '' }
+  })()` )
+  assert.deepEqual(daysContract, { step: '1', min: '1', max: '7' })
+  const beforeInvalidHumanInput = live.requestCount
+  const invalidHumanInput = await live.ev(`(() => {
+    const days = document.querySelector('#parameter-days')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(days, '3.5')
+    days.dispatchEvent(new Event('input', { bubbles: true }))
+    days.dispatchEvent(new Event('change', { bubbles: true }))
+    return { valid: days.checkValidity(), stepMismatch: days.validity.stepMismatch }
+  })()` )
+  assert.deepEqual(invalidHumanInput, { valid: false, stepMismatch: true })
+  await live.ev(`document.querySelector('form.parameter-card').requestSubmit()` )
+  await sleep(150)
+  assert.equal(live.requestCount, beforeInvalidHumanInput, 'Fractional Open-Meteo Marine forecast days reached a provider request')
+  await live.ev(`(() => {
+    const days = document.querySelector('#parameter-days')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(days, '3')
+    days.dispatchEvent(new Event('input', { bubbles: true }))
+    days.dispatchEvent(new Event('change', { bubbles: true }))
+  })()` )
+  await sleep(100)
+  report.checks.push({ id: 'open-meteo-marine', case: 'native integer forecast-days contract', step: 1, min: 1, max: 7, fractionalDaysRejected: true, providerRequests: 0 })
   const result = await live.run()
   assert.equal(result.ok, true, result.error)
   const response = result.data

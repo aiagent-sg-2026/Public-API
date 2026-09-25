@@ -12,6 +12,10 @@ const report = {
   errors: [],
 }
 const unnamed = (nodes) => nodes.filter((node) => !node.ignored && ['button','combobox','textbox','spinbutton','searchbox','tab','radio','link'].includes(node.role?.value) && !(node.name?.value || '').trim())
+const setControl = async (b, name, value) => {
+  await b.ev(`(()=>{const e=document.querySelector('[name=${JSON.stringify(name)}]');if(!e)throw Error('missing control');const p=e.tagName==='SELECT'?HTMLSelectElement.prototype:HTMLInputElement.prototype;Object.getOwnPropertyDescriptor(p,'value').set.call(e,${JSON.stringify(value)});e.dispatchEvent(new Event(e.tagName==='SELECT'?'change':'input',{bubbles:true}));})()`)
+  await sleep(80)
+}
 const readDom = (b) => b.ev(`(()=>{const s=document.querySelector('.demo-preview'),c=s?.querySelector('[data-domain-card="hn-search"]');return {layout:s?.dataset.previewLayout||'',fallback:s?.dataset.ssotFallback||'',state:c?.dataset.resultState||'',query:c?.dataset.searchQuery||'',tags:c?.dataset.requestTags||'',limit:Number(c?.dataset.requestHitsPerPage||0),bound:c?.dataset.queryBound||'',ack:c?.dataset.requestAcknowledged||'',providerTotal:Number(c?.dataset.providerTotal||0),providerHits:Number(c?.dataset.providerHitCount||0),validHits:Number(c?.dataset.validHitCount||0),invalidHits:Number(c?.dataset.invalidHitCount||0),incompleteHits:Number(c?.dataset.incompleteHitCount||0),countContract:c?.dataset.countContract||'',primaryId:c?.dataset.primaryObjectId||'',primaryKind:c?.dataset.primaryKind||'',endpoint:document.querySelector('.endpoint-box code')?.textContent||'',text:c?.innerText||'',overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`)
 
 const goodStory = {
@@ -24,7 +28,38 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('hn-search-algolia')
-  await b.ev(`(()=>{const el=document.querySelector('#parameter-tag');const set=Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype,'value').set;set.call(el,'(story,comment)');el.dispatchEvent(new Event('change',{bubbles:true}));return el.value})()`)
+
+  const fieldContract = await b.ev(`(() => {
+    const query = document.querySelector('[name="query"]')
+    const limit = document.querySelector('[name="limit"]')
+    return { queryMinLength: query?.minLength, limitMin: limit?.min, limitMax: limit?.max, limitStep: limit?.step }
+  })()`)
+  assert.deepEqual(fieldContract, { queryMinLength: 1, limitMin: '1', limitMax: '20', limitStep: '1' })
+
+  await setControl(b, 'query', '   ')
+  const blankBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()`)
+  await sleep(180)
+  const blankValidation = await b.ev(`(() => { const field=document.querySelector('[name="query"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-query-help')?.textContent||''} })()`)
+  assert.equal(b.requestCount - blankBefore, 0, 'Blank HN search must not trigger a provider request')
+  assert.equal(blankValidation.state, 'idle')
+  assert.equal(blankValidation.invalid, 'true')
+  assert.match(blankValidation.help, /Search term is required\./)
+
+  await setControl(b, 'query', 'OpenAI')
+  await setControl(b, 'limit', '6.5')
+  const fractionalBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()`)
+  await sleep(180)
+  const fractionalValidation = await b.ev(`(() => { const field=document.querySelector('[name="limit"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-limit-help')?.textContent||''} })()`)
+  assert.equal(b.requestCount - fractionalBefore, 0, 'Fractional HN result limit must not trigger a provider request')
+  assert.equal(fractionalValidation.state, 'idle')
+  assert.equal(fractionalValidation.invalid, 'true')
+  assert.match(fractionalValidation.help, /Results must use increments of 1\./)
+  report.checks.push({id:'hn-search-algolia',case:'invalid explicit input',queryMinLength:1,limitStep:1,blankQueryProviderRequests:0,fractionalLimitProviderRequests:0,sharedValidation:'fail-closed'})
+
+  await setControl(b, 'limit', '6')
+  await setControl(b, 'tag', '(story,comment)')
   await sleep(150)
   const run = await b.run()
   assert.equal(run.ok, true, run.error)

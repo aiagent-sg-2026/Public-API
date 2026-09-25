@@ -64,6 +64,38 @@ const responsiveMatchMedia = (initialWidth: number) => {
   return { matchMedia: matchMediaForWidth, setWidth }
 }
 
+const openF1QualifyingFixture = {
+  MRData: {
+    series: 'f1',
+    limit: '30',
+    offset: '0',
+    total: '1',
+    RaceTable: {
+      season: '2025',
+      round: '1',
+      Races: [{
+        season: '2025',
+        round: '1',
+        raceName: 'Australian Grand Prix',
+        Circuit: {
+          circuitId: 'albert_park',
+          circuitName: 'Albert Park Grand Prix Circuit',
+          Location: { locality: 'Melbourne', country: 'Australia' },
+        },
+        QualifyingResults: [{
+          position: '1',
+          number: '4',
+          Driver: { driverId: 'norris', code: 'NOR', givenName: 'Lando', familyName: 'Norris', nationality: 'British' },
+          Constructor: { constructorId: 'mclaren', name: 'McLaren' },
+          Q1: '1:15.912',
+          Q2: '1:15.415',
+          Q3: '1:15.096',
+        }],
+      }],
+    },
+  },
+}
+
 describe('catalog live API flow', () => {
   beforeEach(() => {
     // Establish the initial route without queuing a hashchange that can race a later
@@ -420,6 +452,50 @@ describe('catalog live API flow', () => {
     expect(screen.getByRole('region', { name: 'Historical Weather request output' })).toHaveAttribute('data-request-state', 'idle')
   })
 
+  it('uses the Canada Open Data field SSOT to block blank keywords and fractional rows for humans and WebMCP before provider execution', async () => {
+    window.location.hash = '#/request-lab?api=canada-open-data-search'
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    type RegisteredTool = {
+      name: string
+      execute: (input: Record<string, unknown>) => unknown | Promise<unknown>
+    }
+    const registered = new Map<string, RegisteredTool>()
+    const registerTool = vi.fn(async (tool: RegisteredTool) => { registered.set(tool.name, tool) })
+    Object.defineProperty(document, 'modelContext', { configurable: true, value: { registerTool } })
+
+    render(<App />)
+    await waitFor(() => expect(registerTool).toHaveBeenCalledTimes(5))
+
+    const query = screen.getByRole('textbox', { name: 'Catalogue search' })
+    const limit = screen.getByRole('spinbutton', { name: 'Results' })
+    expect(query).toHaveAttribute('minlength', '1')
+    expect(limit).toHaveAttribute('step', '1')
+
+    fireEvent.change(query, { target: { value: 'climate' } })
+    fireEvent.change(limit, { target: { value: '3.5' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(limit).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Results must use increments of 1.')).toBeInTheDocument()
+
+    fireEvent.change(limit, { target: { value: '3' } })
+    fireEvent.change(query, { target: { value: '   ' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Try live API' }))
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(query).toHaveAttribute('aria-invalid', 'true')
+    expect(screen.getByText('Catalogue search is required.')).toBeInTheDocument()
+
+    const runTool = registered.get('run_public_api_demo')
+    await act(async () => {
+      await expect(runTool?.execute({ id: 'canada-open-data-search', parameters: { query: 'climate', limit: '3.5' } })).rejects.toThrow('Results must use increments of 1.')
+      await expect(runTool?.execute({ id: 'canada-open-data-search', parameters: { query: '   ', limit: '3' } })).rejects.toThrow('Catalogue search is required.')
+    })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-request-state', 'idle')
+  })
+
   it('labels the Health workspace as static catalog metadata rather than current provider health', () => {
     window.location.hash = '#/health'
     render(<App />)
@@ -491,19 +567,35 @@ describe('catalog live API flow', () => {
   it('generates reusable code for non-JSON responses without the removed Yahoo relay parser', () => {
     window.location.hash = '#/request-lab?api=go-module-proxy'
     const { unmount } = render(<App />)
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-response-type', 'text')
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-response-content-types', 'text/plain')
+    expect(screen.getByRole('tab', { name: 'Response details' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy details' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Raw JSON' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Fetch code' }))
     let panel = screen.getByRole('tabpanel')
-    expect(panel).toHaveTextContent("response.headers.get('content-type')")
     expect(panel).toHaveTextContent('await response.text()')
+    expect(panel).toHaveTextContent("response.headers.get('content-type')")
+    expect(panel).toHaveTextContent('text/plain')
+    expect(panel).toHaveTextContent('acceptedContentTypes.includes(contentType)')
+    expect(panel).not.toHaveTextContent('await response.json()')
     expect(panel).not.toHaveTextContent('Markdown Content:')
     unmount()
 
     window.location.hash = '#/request-lab?api=qr-code-generator'
     render(<App />)
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-response-type', 'image')
+    expect(document.querySelector('.request-lab')).toHaveAttribute('data-response-content-types', 'image/png')
+    expect(screen.getByRole('tab', { name: 'Response details' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Copy details' })).toBeInTheDocument()
+    expect(screen.queryByRole('tab', { name: 'Raw JSON' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('tab', { name: 'Fetch code' }))
     panel = screen.getByRole('tabpanel')
-    expect(panel).toHaveTextContent("contentType.startsWith('image/')")
+    expect(panel).toHaveTextContent('image/png')
+    expect(panel).toHaveTextContent('acceptedContentTypes.includes(contentType)')
+    expect(panel).toHaveTextContent('Expected response Content-Type: image/png.')
     expect(panel).toHaveTextContent('await response.blob()')
+    expect(panel).not.toHaveTextContent('await response.json()')
   })
 
   it('generates WoRMS fetch code that preserves the provider-documented 204 no-match contract', () => {
@@ -599,13 +691,14 @@ describe('WebMCP discovery contract', () => {
       total: number
       count: number
       category: string
-      demos: Array<{ category: string; requestLabUrl: string; parameters: Array<{ id: string; min?: number; max?: number; options?: Array<{ label: string; value: string }> }> }>
+      demos: Array<{ category: string; responseType: string; requestLabUrl: string; parameters: Array<{ id: string; min?: number; max?: number; options?: Array<{ label: string; value: string }> }> }>
     }
 
     expect(result.total).toBe(196)
     expect(result.count).toBe(1)
     expect(result.category).toBe('People')
     expect(result.demos[0]?.category).toBe('People')
+    expect(result.demos[0]?.responseType).toBe('json')
     expect(new URL(result.demos[0]?.requestLabUrl ?? 'http://invalid/').hash).toBe('#/request-lab?api=people')
     expect(result.demos[0]?.parameters.find((field) => field.id === 'count')).toMatchObject({ min: 1, max: 10 })
     expect(result.demos[0]?.parameters.find((field) => field.id === 'nationality')?.options).toContainEqual({ label: 'Australia', value: 'au' })
@@ -621,6 +714,24 @@ describe('WebMCP discovery contract', () => {
       demos: Array<{ id: string; keywords?: string[] }>
     }
     expect(taskResult.demos.map((demo) => demo.id)).toEqual(['deps-dev'])
+
+    const imageResult = await listTool?.execute({ query: 'QR Code Generator', category: 'Utility' }) as {
+      demos: Array<{ id: string; responseType?: string; responseContentTypes?: string[] }>
+    }
+    expect(imageResult.demos).toEqual([expect.objectContaining({ id: 'qr-code-generator', responseType: 'image', responseContentTypes: ['image/png'] })])
+
+    const textResult = await listTool?.execute({ query: 'Go Module Proxy', category: 'Developer' }) as {
+      demos: Array<{ id: string; responseType?: string; responseContentTypes?: string[] }>
+    }
+    expect(textResult.demos).toEqual([expect.objectContaining({ id: 'go-module-proxy', responseType: 'text', responseContentTypes: ['text/plain'] })])
+
+    const npmSearchResult = await listTool?.execute({ query: 'npm Registry Search', category: 'Developer' }) as {
+      demos: Array<{ id: string; parameters: Array<{ id: string; min?: number; max?: number; step?: number }> }>
+    }
+    expect(npmSearchResult.demos).toHaveLength(1)
+    expect(npmSearchResult.demos[0]?.id).toBe('npm-search')
+    expect(npmSearchResult.demos[0]?.parameters.find((field) => field.id === 'limit')).toMatchObject({ min: 1, max: 20, step: 1 })
+
     expect(taskResult.demos[0]?.keywords).toContain('package deprecation')
 
     const rangeResult = await listTool?.execute({ query: 'Historical Weather', category: 'Weather' }) as {
@@ -825,6 +936,8 @@ describe('demo preview mapping', () => {
     expect(selectPreviewLayout({ id: 'inaturalist-observations', category: 'Biodiversity' })).toBe('species-observations')
     expect(selectPreviewLayout({ id: 'mbta-transit-routes', category: 'Utility' })).toBe('transit-board')
     expect(selectPreviewLayout({ id: 'open-trivia', category: 'Games' })).toBe('trivia-game')
+    expect(selectPreviewLayout({ id: 'jokeapi-safe', category: 'Games' })).toBe('joke-stage')
+    expect(selectPreviewLayout({ id: 'poetrydb-poems', category: 'Books' })).toBe('poetry-reading-room')
     expect(selectPreviewLayout({ id: 'geocoding-search', category: 'Geo' })).toBe('place-geocoding')
     expect(selectPreviewLayout({ id: 'carbon-intensity-gb', category: 'Environment' })).toBe('carbon-intensity')
     expect(selectPreviewLayout({ id: 'usgs-water-legacy', category: 'Environment' })).toBe('water-gauge')
@@ -990,7 +1103,8 @@ describe('demo preview mapping', () => {
   it('gives single semantic records a full-width readable card contract', () => {
     const candidate = apiCatalog.find((api) => api.id === 'gbif-species-search')
     if (!candidate) throw new Error('Missing GBIF fixture')
-    const { container } = render(<ResponseDemoPreview api={candidate} data={{ count: 1, results: [{ scientificName: 'Felis catus', rank: 'SPECIES', taxonomicStatus: 'ACCEPTED', family: 'Felidae', genus: 'Felis' }] }}/>)
+    const requestUrl = candidate.buildUrl({ query: 'Felis catus' })
+    const { container } = render(<ResponseDemoPreview api={candidate} requestUrl={requestUrl} executedRequest={{ method: 'GET', url: requestUrl }} data={{ offset: 0, limit: 8, endOfRecords: true, count: 1, results: [{ key: 2435099, scientificName: 'Felis catus', rank: 'SPECIES', taxonomicStatus: 'ACCEPTED', family: 'Felidae', genus: 'Felis' }] }}/>)
     const grid = container.querySelector('.semantic-card-grid')
 
     expect(grid).toHaveClass('single')
@@ -1035,13 +1149,19 @@ describe('new interactive API previews', () => {
   })
 
   it('renders NASA events, MBTA routes, and decoded trivia content', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('nasa-eonet-events')} data={{ events: [{ id: 'E1', title: 'Pacific Wildfire', closed: null, categories: [{ title: 'Wildfires' }], geometry: [{ date: '2026-07-13T11:54:00Z', coordinates: [-94.39, 46.24], magnitudeValue: 503, magnitudeUnit: 'acres' }] }] }}/> )
+    const eonet = api('nasa-eonet-events')
+    const eonetUrl = eonet.buildUrl({ category: 'wildfires', days: '30', limit: '6' })
+    const { rerender } = render(<ResponseDemoPreview api={eonet} requestUrl={eonetUrl} executedRequest={{ method: 'GET', url: eonetUrl }} data={{ events: [{ id: 'EONET_7001', title: 'Pacific Wildfire', description: null, link: 'https://eonet.gsfc.nasa.gov/api/v3/events/EONET_7001', closed: null, categories: [{ id: 'wildfires', title: 'Wildfires' }], sources: [{ id: 'InciWeb', url: 'https://inciweb.wildfire.gov/' }], geometry: [{ date: '2026-07-13T11:54:00Z', type: 'Point', coordinates: [-94.39, 46.24], magnitudeValue: 503, magnitudeUnit: 'acres' }] }] }}/> )
     expect(screen.getByRole('region', { name: 'NASA Natural Events' })).toHaveTextContent('Pacific Wildfire')
 
-    rerender(<ResponseDemoPreview api={api('mbta-transit-routes')} data={{ data: [{ id: 'Red', attributes: { color: 'DA291C', description: 'Rapid Transit', long_name: 'Red Line', direction_destinations: ['Ashmont/Braintree', 'Alewife'] } }] }}/> )
+    const mbta = api('mbta-transit-routes')
+    const mbtaUrl = mbta.buildUrl({ routeType: '0,1' })
+    rerender(<ResponseDemoPreview api={mbta} requestUrl={mbtaUrl} executedRequest={{ method: 'GET', url: mbtaUrl }} data={{ data: [{ type: 'route', id: 'Red', attributes: { type: 1, color: 'DA291C', text_color: 'FFFFFF', description: 'Rapid Transit', long_name: 'Red Line', short_name: '', direction_destinations: ['Ashmont/Braintree', 'Alewife'], direction_names: ['South', 'North'] } }] }}/> )
     expect(screen.getByRole('region', { name: 'MBTA Transit Routes' })).toHaveTextContent('Ashmont/Braintree ↔ Alewife')
 
-    rerender(<ResponseDemoPreview api={api('open-trivia')} data={{ response_code: 0, results: [{ category: 'General Knowledge', difficulty: 'medium', question: 'When did Halley&#039;s Comet appear?', correct_answer: '1976', incorrect_answers: ['2001', '1942', '1909'] }] }}/> )
+    const triviaApi = api('open-trivia')
+    const triviaUrl = triviaApi.buildUrl({ amount: '6', category: '9', difficulty: 'medium' })
+    rerender(<ResponseDemoPreview api={triviaApi} requestUrl={triviaUrl} executedRequest={{ method: 'GET', url: triviaUrl }} data={{ response_code: 0, results: [{ type: 'multiple', category: 'General Knowledge', difficulty: 'medium', question: 'When did Halley&#039;s Comet appear?', correct_answer: '1976', incorrect_answers: ['2001', '1942', '1909'] }] }}/> )
     const trivia = screen.getByRole('region', { name: 'Trivia Challenge' })
     expect(trivia).toHaveTextContent("When did Halley's Comet appear?")
     expect(within(trivia).getByText('1976')).toBeInTheDocument()
@@ -1057,16 +1177,23 @@ describe('new specialist API previews', () => {
     return match
   }
 
-  it('renders official Malaysia fuel levels and weekly movement', () => {
-    render(<ResponseDemoPreview api={api('malaysia-fuel-price')} data={[
-      { date: '2026-07-09', ron95: 3.37, ron97: 4, diesel: 3.97, ron95_budi95: 1.99, series_type: 'level' },
-      { date: '2026-07-01', ron95: 3.47, ron97: 4.1, diesel: 4.07, ron95_budi95: 1.99, series_type: 'level' },
+  it('renders request-bound official Malaysia fuel levels and provider weekly movement', () => {
+    const fuelApi = api('malaysia-fuel-price')
+    const requestUrl = fuelApi.buildUrl({ limit: '12' })
+    render(<ResponseDemoPreview api={fuelApi} requestUrl={requestUrl} executedRequest={{ method: 'GET', url: requestUrl }} data={[
+      { date: '2026-07-09', ron95: 3.37, ron97: 4, diesel: 3.97, diesel_eastmsia: 2.15, ron95_budi95: 1.99, ron95_skps: 2.05, series_type: 'level' },
+      { date: '2026-07-09', ron95: -0.1, ron97: -0.1, diesel: -0.1, diesel_eastmsia: 0, ron95_budi95: 0, ron95_skps: 0, series_type: 'change_weekly' },
+      { date: '2026-07-01', ron95: 3.47, ron97: 4.1, diesel: 4.07, diesel_eastmsia: 2.15, ron95_budi95: 1.99, ron95_skps: 2.05, series_type: 'level' },
     ]}/> )
     const preview = screen.getByRole('region', { name: 'Malaysia Fuel Price' })
     expect(preview).toHaveAttribute('data-preview-layout', 'fuel-dashboard')
+    expect(preview.querySelector('.fuel-preview')).toHaveAttribute('data-result-state', 'ready')
+    expect(preview.querySelector('.fuel-preview')).toHaveAttribute('data-request-bound', 'true')
     expect(within(preview).getByText('RM 3.37')).toBeInTheDocument()
     expect(within(preview).getAllByText('↓ RM 0.1')).toHaveLength(3)
+    expect(within(preview).getByText('East Malaysia diesel')).toBeInTheDocument()
     expect(within(preview).getByText('BUDI95')).toBeInTheDocument()
+    expect(within(preview).getByText('SKPS')).toBeInTheDocument()
     expect(within(preview).getByRole('img', { name: 'RON95 price history sparkline' })).toBeInTheDocument()
   })
 
@@ -1087,11 +1214,25 @@ describe('new specialist API previews', () => {
   })
 
   it('renders Nobel laureates and their official motivation', () => {
-    render(<ResponseDemoPreview api={api('nobel-prizes')} data={{ nobelPrizes: [{ awardYear: '2024', category: { en: 'Physics' }, prizeAmount: 11000000, laureates: [{ knownName: { en: 'Geoffrey Hinton' }, motivation: { en: 'for foundational discoveries that enable machine learning' } }] }] }}/>)
+    const nobel = api('nobel-prizes')
+    const requestUrl = nobel.buildUrl({ category: 'phy', limit: '6' })
+    render(<ResponseDemoPreview api={nobel} requestUrl={requestUrl} executedRequest={{ method: 'GET', url: requestUrl }} data={{ nobelPrizes: [{ awardYear: '2024', category: { en: 'Physics' }, prizeAmount: 11000000, laureates: [{ knownName: { en: 'Geoffrey Hinton' }, motivation: { en: 'for foundational discoveries that enable machine learning' } }] }], meta: { offset: 0, limit: 6, nobelPrizeCategory: 'phy', count: 125 } }}/>)
     const preview = screen.getByRole('region', { name: 'Nobel Prize Explorer' })
     expect(preview).toHaveAttribute('data-preview-layout', 'awards-timeline')
     expect(within(preview).getByText('Geoffrey Hinton')).toBeInTheDocument()
     expect(preview).toHaveTextContent('foundational discoveries')
+  })
+
+  it('fails closed when a Nobel HTTP-success response contradicts the exact requested category', () => {
+    const nobel = api('nobel-prizes')
+    const requestUrl = nobel.buildUrl({ category: 'phy', limit: '2' })
+    render(<ResponseDemoPreview api={nobel} requestUrl={requestUrl} executedRequest={{ method: 'GET', url: requestUrl }} data={{
+      nobelPrizes: [{ awardYear: '2025', category: { en: 'Chemistry' }, prizeAmount: 11000000, laureates: [{ knownName: { en: 'Provider mismatch' } }] }],
+      meta: { offset: 0, limit: 2, nobelPrizeCategory: 'che', count: 125 },
+    }}/>)
+    const preview = screen.getByRole('region', { name: 'Nobel Prize Explorer' })
+    expect(preview.querySelector('[data-domain-card="nobel-prizes"]')).toHaveAttribute('data-result-state', 'invalid')
+    expect(preview).not.toHaveTextContent('Provider mismatch')
   })
 
   it('binds AniList GraphQL media results to the executed POST variables', () => {
@@ -1373,13 +1514,16 @@ describe('new specialist API previews', () => {
     expect(within(preview).getByText('ראש השנה 5787')).toBeInTheDocument()
   })
 
-  it('compares Chess.com ratings and match records by time control', () => {
-    render(<ResponseDemoPreview api={api('chess-player-stats')} data={{ fide: 2814, chess_blitz: { last: { rating: 3403 }, best: { rating: 3465 }, record: { win: 35200, loss: 5479, draw: 4312 } }, chess_rapid: { last: { rating: 2839 }, best: { rating: 2927 }, record: { win: 201, loss: 67, draw: 209 } } }}/>)
-    const preview = screen.getByRole('region', { name: 'Chess.com Player Ratings' })
+  it('compares request-bound Lichess public ratings by chess mode', () => {
+    const lichess = api('chess-player-stats')
+    const requestUrl = lichess.buildUrl({ username: 'thibault' })
+    render(<ResponseDemoPreview api={lichess} requestUrl={requestUrl} executedRequest={{ url: requestUrl, method: 'GET' }} data={{ id: 'thibault', username: 'thibault', url: 'https://lichess.org/@/thibault', perfs: { blitz: { games: 11856, rating: 1718, rd: 45, prog: 7 }, rapid: { games: 915, rating: 1802, rd: 68, prog: -75 } } }}/>)
+    const preview = screen.getByRole('region', { name: 'Lichess Player Ratings' })
     expect(preview).toHaveAttribute('data-preview-layout', 'chess-ratings')
-    expect(within(preview).getAllByText('3,403').length).toBeGreaterThan(0)
-    expect(within(preview).getByText('FIDE')).toBeInTheDocument()
-    expect(within(preview).getByText('Best 3,465')).toBeInTheDocument()
+    expect(preview.querySelector('[data-domain-card="lichess-player-ratings"]')).toHaveAttribute('data-result-state', 'ready')
+    expect(within(preview).getAllByText('1,802').length).toBeGreaterThan(0)
+    expect(within(preview).getByText('Rapid')).toBeInTheDocument()
+    expect(within(preview).getByText('915 games')).toBeInTheDocument()
   })
 
   it('turns Crossref work metadata into DOI research cards', () => {
@@ -1530,16 +1674,19 @@ describe('next keyless API previews', () => {
   })
 
   it('renders Swiss transit connections and new market APIs as dedicated layouts', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('swiss-transit-connections')} data={{
+    const swissApi = api('swiss-transit-connections')
+    const swissUrl = swissApi.buildUrl({ from: 'Zurich', to: 'Geneva', limit: '2' })
+    const { rerender } = render(<ResponseDemoPreview api={swissApi} requestUrl={swissUrl} executedRequest={{ method: 'GET', url: swissUrl }} data={{
       connections: [{
-        from: { station: 'Zurich HB', departure: '10:05', platform: '2' },
-        to: { station: 'Bern' },
-        sections: [{ journeys: [{ name: 'IC 6', duration: '60', delay: 3 }] }],
-        delay: 5,
+        from: { station: { id: '8503000', name: 'Zürich HB' }, departure: '2026-09-21T18:32:00+0200', delay: 5, platform: '12' },
+        to: { station: { id: '8501008', name: 'Genève' }, arrival: '2026-09-21T21:25:00+0200', delay: null, platform: '4' },
+        duration: '00d02:53:00', products: ['IC 1'],
+        sections: [{ journey: { name: '000730', category: 'IC', number: '1', to: 'Genève-Aéroport' } }],
       }],
     }}/>)
-    expect(screen.getByRole('region', { name: 'Swiss Transit Connections' })).toHaveAttribute('data-preview-layout', 'transit-board')
-    expect(screen.getByRole('region', { name: 'Swiss Transit Connections' })).toHaveTextContent('Zurich HB → Bern')
+    expect(screen.getByRole('region', { name: 'Swiss Transit Connections' })).toHaveAttribute('data-preview-layout', 'swiss-transit-connections')
+    expect(screen.getByRole('region', { name: 'Swiss Transit Connections' })).toHaveTextContent('Zürich HB → Genève')
+    expect(screen.getByRole('region', { name: 'Swiss Transit Connections' })).toHaveTextContent('Delayed 5 min')
 
     const bankApi = api('bank-of-canada-valet')
     const bankUrl = bankApi.buildUrl({ series: 'FXUSDCAD', startDate: '2026-07-01', endDate: '2026-07-02' })
@@ -1638,8 +1785,19 @@ describe('catalog-wide semantic previews', () => {
     return match
   }
 
-  it('turns nested dictionary meanings into definitions, examples, and synonyms', () => {
-    render(<ResponseDemoPreview api={api('free-dictionary')} data={[{ word: 'hello', phonetic: '/həˈləʊ/', meanings: [{ partOfSpeech: 'noun', synonyms: ['greeting', 'salutation'], definitions: [{ definition: 'An expression of greeting.', example: 'Hello, how are you?' }] }] }]}/> )
+  it('turns request-bound dictionary meanings into definitions, examples, and synonyms', () => {
+    const dictionaryApi = api('free-dictionary')
+    const dictionaryRequest = dictionaryApi.buildUrl({ word: 'hello' })
+    render(<ResponseDemoPreview api={dictionaryApi} requestUrl={dictionaryRequest} executedRequest={{ method: 'GET', url: dictionaryRequest }} data={{
+      word: 'hello',
+      entries: [{
+        language: { code: 'en', name: 'English' },
+        partOfSpeech: 'noun',
+        pronunciations: [{ type: 'ipa', text: '/həˈləʊ/' }],
+        senses: [{ definition: 'An expression of greeting.', examples: ['Hello, how are you?'], synonyms: ['greeting', 'salutation'] }],
+      }],
+      source: { url: 'https://en.wiktionary.org/wiki/hello', license: { name: 'CC BY-SA 4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/' } },
+    }}/>)
     const preview = screen.getByRole('region', { name: 'Free Dictionary' })
     expect(preview).toHaveAttribute('data-preview-layout', 'dictionary-entry')
     expect(within(preview).getByText('An expression of greeting.')).toBeInTheDocument()
@@ -1915,7 +2073,9 @@ describe('Request Lab SSOT card adapters', () => {
     expect(usgs.querySelector('[data-domain-card="usgs-earthquake-feed"]')).toHaveAttribute('data-result-state', 'ready')
     expect(usgs).toHaveTextContent('M 3.7 · Off the coast of Oregon')
 
-    rerender(<ResponseDemoPreview api={api('gbif-species-search')} data={{ count: 1759, results: [{ scientificName: 'Panthera', kingdom: 'Animalia', phylum: 'Chordata', class: 'Mammalia', order: 'Carnivora', family: 'Felidae', genus: 'Panthera', rank: 'GENUS', taxonomicStatus: 'ACCEPTED' }] }} />)
+    const gbifApi = api('gbif-species-search')
+    const gbifUrl = gbifApi.buildUrl({ query: 'panthera' })
+    rerender(<ResponseDemoPreview api={gbifApi} requestUrl={gbifUrl} executedRequest={{ method: 'GET', url: gbifUrl }} data={{ offset: 0, limit: 8, endOfRecords: false, count: 1759, results: [{ key: 2435194, scientificName: 'Panthera', kingdom: 'Animalia', phylum: 'Chordata', class: 'Mammalia', order: 'Carnivora', family: 'Felidae', genus: 'Panthera', rank: 'GENUS', taxonomicStatus: 'ACCEPTED' }] }} />)
     const gbif = expectNoGenericFallback('GBIF Species Search')
     expect(gbif).toHaveTextContent('Panthera')
     expect(gbif).toHaveTextContent('Felidae')
@@ -2058,11 +2218,15 @@ describe('new verified keyless API previews', () => {
   }
 
   it('adapts Formula 1, Belgian rail, space news, and launch schedule responses', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('openf1-historical')} data={{ MRData: { RaceTable: { Races: [{ raceName: 'Australian Grand Prix', Circuit: { circuitName: 'Albert Park Grand Prix Circuit', Location: { locality: 'Melbourne', country: 'Australia' } }, QualifyingResults: [{ position: '1', number: '4', Driver: { code: 'NOR', givenName: 'Lando', familyName: 'Norris', nationality: 'British' }, Constructor: { name: 'McLaren' }, Q1: '1:15.912', Q2: '1:15.415', Q3: '1:15.096' }] }] } } }}/>)
+    const openF1Api = api('openf1-historical')
+    const openF1Request = openF1Api.buildUrl({ season: '2025', round: '1' })
+    const { rerender } = render(<ResponseDemoPreview api={openF1Api} data={openF1QualifyingFixture} requestUrl={openF1Request} executedRequest={{ url: openF1Request, method: 'GET' }}/>)
     expect(screen.getByRole('region', { name: 'Jolpica F1 Qualifying' })).toHaveTextContent('Australian Grand Prix')
     expect(screen.getByRole('region', { name: 'Jolpica F1 Qualifying' })).toHaveTextContent('Lando Norris')
 
-    rerender(<ResponseDemoPreview api={api('irail-liveboard')} data={{ station: 'Brussels-South/Brussels-Midi', stationinfo: { name: 'Brussels-South/Brussels-Midi' }, departures: { departure: [{ time: '1784102400', delay: '300', canceled: '0', vehicle: 'BE.NMBS.IC123', platform: '4', station: 'Antwerpen-Centraal' }] } }}/> )
+    const irailApi = api('irail-liveboard')
+    const irailRequest = irailApi.buildUrl({ station: 'Brussels-South', direction: 'departure' })
+    rerender(<ResponseDemoPreview api={irailApi} requestUrl={irailRequest} executedRequest={{ url: irailRequest, method: 'GET' }} data={{ version: '1.4', timestamp: '1784102100', station: 'Brussels-South/Brussels-Midi', stationinfo: { id: 'BE.NMBS.008814001', '@id': 'http://irail.be/stations/NMBS/008814001', name: 'Brussels-South/Brussels-Midi', standardname: 'Brussel-Zuid/Bruxelles-Midi' }, departures: { number: '1', departure: [{ id: '0', time: '1784102400', delay: '300', canceled: '0', vehicle: 'BE.NMBS.IC123', platform: '4', station: 'Antwerpen-Centraal' }] } }}/> )
     expect(screen.getByRole('region', { name: 'Belgian Rail Liveboard' })).toHaveTextContent('Antwerpen-Centraal')
     expect(screen.getByRole('region', { name: 'Belgian Rail Liveboard' })).toHaveTextContent('Delayed 5 min')
 
@@ -2088,7 +2252,9 @@ describe('new verified keyless API previews', () => {
   })
 
   it('adapts Wiktionary, anime quotes, safe jokes, and recipe responses', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('wiktionary-entry')} data={{ en: [{ language: 'English', partOfSpeech: 'Interjection', definitions: [{ definition: '<i>A greeting</i> used when meeting someone.', examples: ['Hello there.'], synonyms: ['hi'] }] }] }}/> )
+    const wiktionaryApi = api('wiktionary-entry')
+    const wiktionaryRequest = wiktionaryApi.buildUrl({ word: 'hello' })
+    const { rerender } = render(<ResponseDemoPreview api={wiktionaryApi} requestUrl={wiktionaryRequest} executedRequest={{ method: 'GET', url: wiktionaryRequest }} data={{ en: [{ language: 'English', partOfSpeech: 'Interjection', definitions: [{ definition: '<i>A greeting</i> used when meeting someone.', examples: ['Hello there.'], synonyms: ['hi'] }] }] }}/> )
     const dictionary = screen.getByRole('region', { name: 'Wiktionary Definitions' })
     expect(dictionary).toHaveTextContent('A greeting used when meeting someone.')
     expect(dictionary).toHaveTextContent('Hello there.')
@@ -2105,7 +2271,9 @@ describe('new verified keyless API previews', () => {
     expect(invalidAnimeQuote.querySelector('[data-domain-card="anime-quote"]')).toHaveAttribute('data-result-state', 'invalid')
     expect(invalidAnimeQuote).not.toHaveTextContent('Fabricated quote')
 
-    rerender(<ResponseDemoPreview api={api('jokeapi-safe')} data={{ error: false, category: 'Programming', type: 'twopart', setup: 'Why did the developer cross the road?', delivery: 'To reach the other site.', safe: true }}/> )
+    const jokeApi = api('jokeapi-safe')
+    const jokeRequest = jokeApi.buildUrl({ category: 'Programming', type: 'twopart' })
+    rerender(<ResponseDemoPreview api={jokeApi} requestUrl={jokeRequest} executedRequest={{ method: 'GET', url: jokeRequest }} data={{ error: false, category: 'Programming', type: 'twopart', setup: 'Why did the developer cross the road?', delivery: 'To reach the other site.', flags: { nsfw: false, religious: false, political: false, racist: false, sexist: false, explicit: false }, id: 42, safe: true, lang: 'en' }}/> )
     const joke = screen.getByRole('region', { name: 'Safe Joke Generator' })
     expect(joke).toHaveTextContent('Why did the developer cross the road?')
     expect(joke).toHaveTextContent('To reach the other site.')
@@ -2122,16 +2290,28 @@ describe('new verified keyless API previews', () => {
   })
 
   it('adapts Brazil postcode, poetry, CoinGecko, and Star Wars responses', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('brasilapi-postcode')} data={{ cep: '01310930', state: 'SP', city: 'São Paulo', neighborhood: 'Bela Vista', street: 'Avenida Paulista', timezoneName: 'America/Sao_Paulo', location: { type: 'Point', coordinates: { longitude: '-46.6558', latitude: '-23.5614' } } }}/> )
+    const brasilApi = api('brasilapi-postcode')
+    const brasilRequest = brasilApi.buildUrl({ postcode: '01310-930' })
+    const brasilResponse = { cep: '01310930', state: 'SP', city: 'São Paulo', neighborhood: 'Bela Vista', street: 'Avenida Paulista', service: 'open-cep', timezoneName: 'America/Sao_Paulo', location: { type: 'Point', coordinates: { longitude: '-46.6558', latitude: '-23.5614' } } }
+    const { rerender } = render(<ResponseDemoPreview api={brasilApi} requestUrl={brasilRequest} executedRequest={{ method: 'GET', url: brasilRequest }} data={brasilResponse}/> )
     const postcode = screen.getByRole('region', { name: 'Brazil Postcode Explorer' })
+    expect(postcode.querySelector('[data-domain-card="brasilapi-postcode"]')).toHaveAttribute('data-result-state', 'ready')
+    expect(postcode.querySelector('[data-domain-card="brasilapi-postcode"]')).toHaveAttribute('data-request-bound', 'true')
     expect(postcode).toHaveTextContent('Avenida Paulista')
     expect(postcode).toHaveTextContent('Bela Vista')
     expect(postcode).toHaveTextContent('São Paulo · SP')
 
-    rerender(<ResponseDemoPreview api={api('poetrydb-poems')} data={[{ title: 'Hope is the thing with feathers', author: 'Emily Dickinson', lines: ['Hope is the thing with feathers', 'That perches in the soul'], linecount: '12' }]}/> )
+    const otherBrasilRequest = brasilApi.buildUrl({ postcode: '01001000' })
+    rerender(<ResponseDemoPreview api={brasilApi} requestUrl={otherBrasilRequest} executedRequest={{ method: 'GET', url: otherBrasilRequest }} data={brasilResponse}/> )
+    expect(postcode.querySelector('[data-domain-card="brasilapi-postcode"]')).toHaveAttribute('data-result-state', 'invalid')
+    expect(postcode).not.toHaveTextContent('Avenida Paulista')
+
+    const poetryApi = api('poetrydb-poems')
+    const poetryRequest = poetryApi.buildUrl({ author: 'Emily Dickinson', count: '3' })
+    rerender(<ResponseDemoPreview api={poetryApi} requestUrl={poetryRequest} executedRequest={{ method: 'GET', url: poetryRequest }} data={[{ title: 'Hope is the thing with feathers', author: 'Emily Dickinson', lines: ['Hope is the thing with feathers', 'That perches in the soul'], linecount: '2' }, { title: 'Because I could not stop for Death', author: 'Emily Dickinson', lines: ['Because I could not stop for Death'], linecount: 1 }, { title: 'I heard a Fly buzz', author: 'Emily Dickinson', lines: ['I heard a Fly buzz'], linecount: '1' }]}/> )
     const poetry = screen.getByRole('region', { name: 'PoetryDB Reader' })
     expect(poetry).toHaveTextContent('Hope is the thing with feathers')
-    expect(poetry).toHaveTextContent('12 lines')
+    expect(poetry).toHaveTextContent('2 lines')
 
     rerender(<ResponseDemoPreview api={api('coingecko-keyless-market')} executedRequest={{ method: 'GET', url: api('coingecko-keyless-market').buildUrl({ coin: 'bitcoin', currency: 'usd' }) }} data={{ bitcoin: { usd: 65000, usd_market_cap: 1280000000000, usd_24h_vol: 35000000000, usd_24h_change: 2.5, last_updated_at: 1784102400 } }}/> )
     const market = screen.getByRole('region', { name: 'CoinGecko Keyless Market' })
@@ -2337,11 +2517,19 @@ describe('browser-ready health remediation previews', () => {
   }
 
   it('renders remediated dictionary, F1, model, and Dart package contracts', () => {
-    const { rerender } = render(<ResponseDemoPreview api={api('free-dictionary')} data={{ word: 'hello', entries: [{ partOfSpeech: 'interjection', pronunciations: [{ type: 'ipa', text: '/həˈloʊ/' }], senses: [{ definition: 'Used as a greeting.', examples: ['Hello there.'], synonyms: ['hi'] }] }] }}/>)
+    const dictionaryApi = api('free-dictionary')
+    const dictionaryRequest = dictionaryApi.buildUrl({ word: 'hello' })
+    const { rerender } = render(<ResponseDemoPreview api={dictionaryApi} requestUrl={dictionaryRequest} executedRequest={{ method: 'GET', url: dictionaryRequest }} data={{
+      word: 'hello',
+      entries: [{ language: { code: 'en', name: 'English' }, partOfSpeech: 'interjection', pronunciations: [{ type: 'ipa', text: '/həˈloʊ/' }], senses: [{ definition: 'Used as a greeting.', examples: ['Hello there.'], synonyms: ['hi'] }] }],
+      source: { url: 'https://en.wiktionary.org/wiki/hello', license: { name: 'CC BY-SA 4.0', url: 'https://creativecommons.org/licenses/by-sa/4.0/' } },
+    }}/>)
     expect(screen.getByRole('region', { name: 'Free Dictionary' })).toHaveTextContent('Used as a greeting.')
     expect(screen.getByRole('region', { name: 'Free Dictionary' })).toHaveTextContent('/həˈloʊ/')
 
-    rerender(<ResponseDemoPreview api={api('openf1-historical')} data={{ MRData: { RaceTable: { Races: [{ raceName: 'Australian Grand Prix', Circuit: { circuitName: 'Albert Park Grand Prix Circuit', Location: { locality: 'Melbourne', country: 'Australia' } }, QualifyingResults: [{ position: '1', number: '4', Driver: { code: 'NOR', givenName: 'Lando', familyName: 'Norris', nationality: 'British' }, Constructor: { name: 'McLaren' }, Q1: '1:15.912', Q2: '1:15.415', Q3: '1:15.096' }] }] } } }}/>)
+    const openF1Api = api('openf1-historical')
+    const openF1Request = openF1Api.buildUrl({ season: '2025', round: '1' })
+    rerender(<ResponseDemoPreview api={openF1Api} data={openF1QualifyingFixture} requestUrl={openF1Request} executedRequest={{ url: openF1Request, method: 'GET' }}/>)
     const f1 = screen.getByRole('region', { name: 'Jolpica F1 Qualifying' })
     expect(f1).toHaveTextContent('Australian Grand Prix')
     expect(f1).toHaveTextContent('Lando Norris')

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const endpoint = 'https://registry.npmjs.org/-/v1/search?text=react&size=8'
 const report = {
   origin: 'https://yapweijun1996.github.io',
   publication: 'unpublished local app bundle under the real GitHub Pages origin',
-  source: 'live npm registry package search plus deterministic malformed HTTP-200 fixtures',
+  source: 'SSOT integer-size validation, one live npm registry package search, plus deterministic malformed HTTP-200 fixtures',
   checks: [],
   errors: [],
 }
@@ -38,6 +38,33 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('npm-search')
+  const sizeContract = await b.ev(`(() => {
+    const input = document.querySelector('#parameter-limit')
+    return { step: input?.getAttribute('step') || '', min: input?.getAttribute('min') || '', max: input?.getAttribute('max') || '' }
+  })()`)
+  assert.deepEqual(sizeContract, { step: '1', min: '1', max: '20' })
+  const beforeFractional = b.requestCount
+  const fractional = await b.ev(`(() => {
+    const input = document.querySelector('#parameter-limit')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '8.5')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    return { valid: input.checkValidity(), stepMismatch: input.validity.stepMismatch }
+  })()`)
+  assert.deepEqual(fractional, { valid: false, stepMismatch: true })
+  await b.ev(`document.querySelector('form.parameter-card').requestSubmit()`)
+  await sleep(150)
+  assert.equal(b.requestCount, beforeFractional, 'Fractional npm search size reached a provider request')
+  await b.ev(`(() => {
+    const input = document.querySelector('#parameter-limit')
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    setter.call(input, '8')
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+  })()`)
+  await sleep(100)
+  report.checks.push({ id: 'npm-search', case: 'SSOT integer size validation', step: 1, min: 1, max: 20, fractionalSizeRejected: true, providerRequests: 0 })
   const run = await b.run()
   assert.equal(run.ok, true, run.error)
   assert(run.data && typeof run.data === 'object' && !Array.isArray(run.data), 'live npm response must be an object')

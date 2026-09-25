@@ -1,4 +1,4 @@
-import { getAgentExecutionPolicy, getAutomatedVerificationPolicy, type ApiDemo, type ApiField } from './apiCatalog'
+import { getAgentExecutionPolicy, getApiResponseType, getAutomatedVerificationPolicy, type ApiDemo, type ApiField, type ApiResponseType } from './apiCatalog'
 
 export const MACHINE_CATALOG_SCHEMA_VERSION = 1 as const
 
@@ -24,6 +24,8 @@ export type MachineCatalogApi = {
   documentationUrl: string
   method: 'GET' | 'POST'
   keyRequired: false
+  responseType: ApiResponseType
+  responseContentTypes?: string[]
   requestLabUrl: string
   agentExecution: ReturnType<typeof getAgentExecutionPolicy>
   automatedVerification?: ReturnType<typeof getAutomatedVerificationPolicy>
@@ -82,6 +84,8 @@ export const buildMachineCatalog = (apis: ApiDemo[], base = '/'): MachineCatalog
       documentationUrl: api.documentationUrl,
       method: api.method ?? 'GET',
       keyRequired: false,
+      responseType: getApiResponseType(api),
+      ...(api.responseContentTypes?.length ? { responseContentTypes: [...api.responseContentTypes] } : {}),
       requestLabUrl: `${catalogPath}#/request-lab?api=${encodeURIComponent(api.id)}`,
       agentExecution: getAgentExecutionPolicy(api),
       ...(api.automatedVerification ? { automatedVerification: getAutomatedVerificationPolicy(api) } : {}),

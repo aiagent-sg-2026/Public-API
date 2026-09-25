@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import { browser, evidence, root } from './lib/pages-origin-browser.mjs'
+import { browser, evidence, root, sleep } from './lib/pages-origin-browser.mjs'
 
 const endpoint = 'https://api.stackexchange.com/2.3/questions?order=desc&sort=activity&tagged=javascript&site=stackoverflow&pagesize=8'
 const report = {
@@ -12,6 +12,16 @@ const report = {
 }
 
 const unnamed = (nodes) => nodes.filter((node) => !node.ignored && ['button', 'combobox', 'textbox', 'spinbutton', 'searchbox', 'tab', 'radio', 'link'].includes(node.role?.value) && !(node.name?.value || '').trim())
+const setControl = async (active, name, value) => {
+  await active.ev(`(() => {
+    const element = document.querySelector('[name=${JSON.stringify(name)}]')
+    if (!element) throw new Error('Missing control ' + ${JSON.stringify(name)})
+    const prototype = element.tagName === 'SELECT' ? HTMLSelectElement.prototype : HTMLInputElement.prototype
+    Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, ${JSON.stringify(value)})
+    element.dispatchEvent(new Event(element.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }))
+  })()`)
+  await sleep(80)
+}
 const readDom = (b) => b.ev(`(()=>{const s=document.querySelector('.demo-preview'),c=s?.querySelector('[data-domain-card="stack-exchange-questions"]');return {layout:s?.dataset.previewLayout||'',fallback:s?.dataset.ssotFallback||'',state:c?.dataset.resultState||'',site:c?.dataset.site||'',tags:c?.dataset.requestTags||'',sort:c?.dataset.requestSort||'',order:c?.dataset.requestOrder||'',pageSize:Number(c?.dataset.requestPageSize||0),queryBound:c?.dataset.queryBound||'',providerResults:Number(c?.dataset.providerResultCount||0),validResults:Number(c?.dataset.validResultCount||0),invalidResults:Number(c?.dataset.invalidResultCount||0),incompleteResults:Number(c?.dataset.incompleteResultCount||0),wrapperContract:c?.dataset.wrapperContract||'',tagContract:c?.dataset.tagContract||'',countContract:c?.dataset.countContract||'',hasMore:c?.dataset.hasMore||'',quotaRemaining:c?.dataset.quotaRemaining===''||c?.dataset.quotaRemaining===undefined?null:Number(c.dataset.quotaRemaining),quotaMax:c?.dataset.quotaMax===''||c?.dataset.quotaMax===undefined?null:Number(c.dataset.quotaMax),backoff:c?.dataset.backoffSeconds===''||c?.dataset.backoffSeconds===undefined?null:Number(c.dataset.backoffSeconds),endpoint:document.querySelector('.endpoint-box code')?.textContent||'',text:c?.innerText||'',overflow:document.documentElement.scrollWidth>document.documentElement.clientWidth+1}})()`)
 
 const trustedQuestion = (row) => row && typeof row === 'object'
@@ -45,6 +55,38 @@ let b
 try {
   b = await browser(`${root}/dist`)
   await b.nav('stack-exchange')
+
+  const fieldContract = await b.ev(`(() => {
+    const tags = document.querySelector('[name="tags"]')
+    const limit = document.querySelector('[name="limit"]')
+    return { tagsMinLength: tags?.minLength, tagsMaxLength: tags?.maxLength, tagsPattern: tags?.pattern, limitMin: limit?.min, limitMax: limit?.max, limitStep: limit?.step }
+  })()` )
+  assert.deepEqual(fieldContract, { tagsMinLength: 1, tagsMaxLength: 200, tagsPattern: '[^;]+(?:;[^;]+){0,4}', limitMin: '1', limitMax: '20', limitStep: '1' })
+
+  await setControl(b, 'tags', '   ')
+  await setControl(b, 'limit', '8')
+  const blankBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()`)
+  await sleep(180)
+  const blankValidation = await b.ev(`(() => { const field=document.querySelector('[name="tags"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-tags-help')?.textContent||''} })()` )
+  assert.equal(b.requestCount - blankBefore, 0, 'Blank Stack Exchange tags must not trigger a provider request')
+  assert.equal(blankValidation.state, 'idle')
+  assert.equal(blankValidation.invalid, 'true')
+  assert.match(blankValidation.help, /Required tags is required\./)
+
+  await setControl(b, 'tags', 'javascript')
+  await setControl(b, 'limit', '8.5')
+  const fractionalBefore = b.requestCount
+  await b.ev(`document.querySelector('.parameter-card').requestSubmit()`)
+  await sleep(180)
+  const fractionalValidation = await b.ev(`(() => { const field=document.querySelector('[name="limit"]'); return {state:document.querySelector('.request-lab')?.dataset.requestState,invalid:field?.getAttribute('aria-invalid'),help:document.querySelector('#parameter-limit-help')?.textContent||''} })()` )
+  assert.equal(b.requestCount - fractionalBefore, 0, 'Fractional Stack Exchange page size must not trigger a provider request')
+  assert.equal(fractionalValidation.state, 'idle')
+  assert.equal(fractionalValidation.invalid, 'true')
+  assert.match(fractionalValidation.help, /Questions must use increments of 1\./)
+  report.checks.push({ id: 'stack-exchange', case: 'invalid explicit input', tagsMinLength: 1, limitStep: 1, blankTagsProviderRequests: 0, fractionalPageSizeProviderRequests: 0, sharedValidation: 'fail-closed' })
+
+  await setControl(b, 'limit', '8')
   const run = await b.run()
   assert.equal(run.ok, true, run.error)
   assert(run.data && typeof run.data === 'object' && !Array.isArray(run.data), 'live Stack Exchange response must be a common wrapper object')
